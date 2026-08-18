@@ -408,25 +408,38 @@ function resizeImageDataUrl(dataUrl, maxDim, quality){
   });
 }
 async function processFile(file){
-  var raw = await readFileAsDataUrl(file);
-  var isImage = file.type && file.type.indexOf('image/')===0;
-  var dataUrl = raw, thumb = null;
-  if(isImage){
-    try{
-      dataUrl = await resizeImageDataUrl(raw, 1100, 0.7);
-      thumb = await resizeImageDataUrl(raw, 140, 0.6);
-    }catch(resizeErr){
-      // Certains formats (HEIC, etc.) ne se decodent pas via canvas : on retente en original.
-      dataUrl = raw;
-      thumb = null;
-    }
+  if (!sb || !currentUser) {
+    throw new Error("Vous devez être connecté pour envoyer un document.");
   }
-  var approxBytes = Math.round(dataUrl.length * 3/4);
-  if(approxBytes > MAX_DOC_BYTES){
-    var mo = (approxBytes/1000000).toFixed(1);
-    throw new Error('Photo trop lourde meme apres compression (' + mo + ' Mo, limite environ 4 Mo). Essayez une photo moins detaillee ou une capture d\u2019ecran.');
+
+  // 1. Génération d'un nom de fichier unique avec le dossier de l'utilisateur
+  var fileExt = file.name.split('.').pop();
+  var filePath = currentUser.id + '/' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '.' + fileExt;
+
+  // 2. Envoi du fichier vers Supabase Storage (bucket "vehicle-documents")
+  var { data, error } = await sb.storage
+    .from('vehicle-documents')
+    .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+  if (error) {
+    throw new Error("Erreur Supabase Storage : " + error.message);
   }
-  return { name: file.name, mime: file.type || 'application/octet-stream', dataUrl: dataUrl, thumb: thumb, size: approxBytes };
+
+  // 3. Récupération de l'URL publique accessible sur internet
+  var { data: publicUrlData } = sb.storage
+    .from('vehicle-documents')
+    .getPublicUrl(filePath);
+
+  var fileUrl = publicUrlData.publicUrl;
+
+  // 4. On renvoie l'URL à la place du texte DataUrl
+  return { 
+    name: file.name, 
+    mime: file.type || 'application/octet-stream', 
+    dataUrl: fileUrl, 
+    thumb: fileUrl, 
+    size: file.size 
+  };
 }
 function renderDocChips(docs){
   if(!docs || !docs.length) return '';
