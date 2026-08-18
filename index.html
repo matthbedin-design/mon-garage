@@ -412,32 +412,33 @@ async function processFile(file){
     throw new Error("Vous devez être connecté pour envoyer un document.");
   }
 
-  // 1. Génération d'un nom de fichier unique avec le dossier de l'utilisateur
-  var fileExt = file.name.split('.').pop();
-  var filePath = currentUser.id + '/' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '.' + fileExt;
+  // Nettoyage du nom de fichier (sans caractères spéciaux)
+  var cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, "_");
+  var filePath = currentUser.id + '/' + Date.now() + '_' + cleanFileName;
 
-  // 2. Envoi du fichier vers Supabase Storage (bucket "vehicle-documents")
+  // 1. Envoi du fichier dans Supabase Storage
   var { data, error } = await sb.storage
     .from('vehicle-documents')
     .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
   if (error) {
+    console.error("Erreur Storage :", error);
+    alert("Impossible d'envoyer la photo : " + error.message);
     throw new Error("Erreur Supabase Storage : " + error.message);
   }
 
-  // 3. Récupération de l'URL publique accessible sur internet
+  // 2. Génération de l'URL publique
   var { data: publicUrlData } = sb.storage
     .from('vehicle-documents')
     .getPublicUrl(filePath);
 
-  var fileUrl = publicUrlData.publicUrl;
+  var publicUrl = publicUrlData.publicUrl;
 
-  // 4. On renvoie l'URL à la place du texte DataUrl
   return { 
     name: file.name, 
     mime: file.type || 'application/octet-stream', 
-    dataUrl: fileUrl, 
-    thumb: fileUrl, 
+    dataUrl: publicUrl, 
+    thumb: publicUrl, 
     size: file.size 
   };
 }
