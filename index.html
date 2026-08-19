@@ -6,20 +6,23 @@
 <title>Carnet de bord — Entretien véhicules</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#1B1D1E; --surface:#242628; --surface-2:#2B2E30; --border:#35383A;
     --text:#ECECE8; --text-muted:#9B9E9F; --yellow:#F0B429; --red:#D9534F; --green:#5FAE7D;
+    --accent: var(--yellow);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; -webkit-font-smoothing:antialiased; }
   .app{ max-width:720px; margin:0 auto; padding:20px 16px 80px; }
-  header.topbar{ display:flex; align-items:center; gap:12px; padding:4px 2px 18px; }
+  header.topbar{ display:flex; align-items:center; gap:12px; padding:4px 2px 18px; flex-wrap:wrap; }
   .brand-mark{ width:38px;height:38px;flex:none; display:flex;align-items:center;justify-content:center; border:2px solid var(--yellow); border-radius:50%; color:var(--yellow); }
+  .brand-text{ flex:1; min-width:180px; }
   .brand-text h1{ font-family:'Oswald',sans-serif; font-weight:600; letter-spacing:0.06em; font-size:20px; margin:0; text-transform:uppercase; }
   .brand-text p{ margin:2px 0 0; font-size:12.5px; color:var(--text-muted); }
+  .top-actions{ display:flex; gap:6px; }
+
   nav.tabs{ display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; }
   .tab-btn{
     font-family:'Oswald',sans-serif; background:none; border:none; color:var(--text-muted);
@@ -27,20 +30,21 @@
     cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap; transition:color .15s ease;
   }
   .tab-btn.active{ color:var(--text); }
-  .tab-btn:hover{ color:var(--text); }
   .tab-add{ font-family:'Oswald',sans-serif; background:none; border:none; color:var(--text-muted); font-size:18px; padding:8px 12px 12px; cursor:pointer; flex:none; }
   .tab-add:hover{ color:var(--yellow); }
 
-  .vehicle-header{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; margin-bottom:22px; position:relative; border-top:3px solid var(--accent, var(--yellow)); }
+  .vehicle-header{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; margin-bottom:22px; position:relative; border-top:3px solid var(--accent); }
   .vehicle-header .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
   .vehicle-name{ font-family:'Oswald',sans-serif; font-size:22px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; margin:0; }
   .vehicle-plate-input{ background:transparent; border:none; border-bottom:1px dashed var(--border); color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:13px; padding:2px 0; margin-top:4px; width:150px; }
   .vehicle-plate-input:focus{ outline:none; border-color:var(--accent); color:var(--text); }
-  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); width:34px;height:34px; border-radius:8px; display:flex;align-items:center;justify-content:center; cursor:pointer; flex:none; }
+  
+  .header-btns{ display:flex; gap:6px; }
+  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); padding:6px 10px; border-radius:8px; display:inline-flex;align-items:center;justify-content:center; gap:6px; cursor:pointer; flex:none; font-size:12px; font-weight:500; }
   .icon-btn:hover{ color:var(--text); border-color:var(--accent); }
 
   .mileage-row{ display:flex; align-items:baseline; gap:8px; margin-top:14px; }
-  .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; border-radius:8px; padding:4px 10px; width:150px; }
+  .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; border-radius:8px; padding:4px 10px; width:160px; }
   .mileage-input:focus{ outline:none; border-color:var(--accent); }
   .mileage-unit{ font-family:'JetBrains Mono',monospace; color:var(--text-muted); font-size:13px; }
 
@@ -77,11 +81,11 @@
   .history-meta .km{ color:var(--text); font-size:13px; }
   .empty-state{ text-align:center; padding:30px 10px; color:var(--text-muted); font-size:13.5px; border:1px dashed var(--border); border-radius:12px; }
 
-  .fab{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); max-width:688px; width:calc(100% - 32px); display:flex; justify-content:flex-end; pointer-events:none; }
+  .fab{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); max-width:688px; width:calc(100% - 32px); display:flex; justify-content:flex-end; pointer-events:none; z-index:10; }
   .add-btn{ pointer-events:auto; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; background:var(--yellow); color:#1B1D1E; border:none; font-size:14px; font-weight:600; padding:13px 20px; border-radius:30px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.4); }
   .add-btn:hover{ filter:brightness(1.08); }
 
-  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; justify-content:center; z-index:50; }
+  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.65); display:none; align-items:flex-end; justify-content:center; z-index:50; }
   .modal-overlay.open{ display:flex; }
   .modal{ background:var(--surface); border:1px solid var(--border); border-radius:16px 16px 0 0; width:100%; max-width:520px; max-height:88vh; overflow-y:auto; padding:20px 20px 24px; }
   @media (min-width:600px){ .modal-overlay{ align-items:center; } .modal{ border-radius:16px; } }
@@ -94,8 +98,8 @@
   .field textarea{ resize:vertical; min-height:60px; }
   .row2{ display:flex; gap:10px; }
   .row2 .field{ flex:1; }
-  .modal-actions{ display:flex; gap:10px; margin-top:6px; }
-  .btn{ flex:1; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; font-size:13.5px; font-weight:600; padding:12px; border-radius:9px; border:1px solid var(--border); cursor:pointer; background:transparent; color:var(--text); }
+  .modal-actions{ display:flex; gap:10px; margin-top:12px; }
+  .btn{ flex:1; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; font-size:13.5px; font-weight:600; padding:12px; border-radius:9px; border:1px solid var(--border); cursor:pointer; background:transparent; color:var(--text); text-align:center; text-decoration:none; }
   .btn-primary{ background:var(--yellow); color:#1B1D1E; border:none; }
   .btn-primary:hover{ filter:brightness(1.08); }
   .btn-ghost{ background:transparent; color:var(--text-muted); }
@@ -131,620 +135,436 @@
   .hr{ border:none; border-top:1px solid var(--border); margin:18px 0; }
   .loading{ text-align:center; padding:60px 10px; color:var(--text-muted); font-size:13.5px; }
 
-  .auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
-  .auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--yellow);border-radius:16px;padding:26px}
-  .auth-card h2{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px}
-  .auth-card p{color:var(--text-muted);font-size:13px;line-height:1.5;margin:0 0 20px}
-  .auth-btn{width:100%;padding:13px;border-radius:9px;border:1px solid var(--border);background:var(--yellow);color:#1B1D1E;font-family:'Oswald',sans-serif;font-weight:600;text-transform:uppercase;cursor:pointer}
-  .auth-status{font-size:12px;color:var(--text-muted);margin-top:12px;text-align:center;min-height:18px}
-  .account-btn{font-size:11px!important;padding:7px 9px!important;width:auto!important}
-  .sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--green);margin-right:6px}
+  .export-box{ background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:12px; }
+  .export-box h4{ margin:0 0 6px; font-size:14px; font-family:'Oswald',sans-serif; text-transform:uppercase; color:var(--yellow); }
+  .export-box p{ margin:0 0 10px; font-size:12px; color:var(--text-muted); line-height:1.4; }
+
+  @media print {
+    body { background: #fff !important; color: #000 !important; }
+    .topbar, .tabs, .fab, .icon-btn, .doc-add-btn, .doc-remove, #addBtn, .modal-overlay, .header-btns { display: none !important; }
+    .app { max-width: 100% !important; padding: 0 !important; }
+    .vehicle-header, .gauge-card, .history-row { border: 1px solid #ccc !important; background: #fff !important; color: #000 !important; page-break-inside: avoid; box-shadow: none !important; }
+    .vehicle-name, .history-type, .km { color: #000 !important; }
+    .mileage-input, .vehicle-plate-input { border: none !important; background: transparent !important; color: #000 !important; padding: 0 !important; }
+    .section-title { color: #333 !important; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  }
 </style>
 </head>
 <body>
-<div class="auth-overlay" id="authOverlay">
-  <div class="auth-card">
-    <h2>Carnet de bord</h2>
-    <p>Connectez-vous pour retrouver vos véhicules, entretiens et documents sur tous vos appareils.</p>
-    <div style="margin-bottom:12px;">
-      <input type="email" id="emailInput" placeholder="Votre e-mail" style="width:100%;padding:10px;margin-bottom:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);">
-      <input type="password" id="passInput" placeholder="Mot de passe" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);">
-    </div>
-    <button class="auth-btn" id="emailLoginBtn">Se connecter</button>
-    <div class="auth-status" id="authStatus"></div>
-  </div>
-</div>
 
 <div class="app">
   <header class="topbar">
-    <div class="brand-mark">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"></path></svg>
-    </div>
+    <div class="brand-mark">🔧</div>
     <div class="brand-text">
-      <h1>Carnet de bord</h1>
-      <p>Suivi d&rsquo;entretien de vos véhicules</p>
+      <h1>Carnet de Bord</h1>
+      <p>Suivi d'entretien véhicule</p>
     </div>
-    <button class="icon-btn" id="accountBtn" title="Compte" style="margin-left:auto;"><span class="sync-dot"></span>Compte</button>
-     <button class="icon-btn" id="journalBtn" title="Journal des modifications">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>
-    </button>
+    <div class="top-actions">
+      <button class="icon-btn" id="exportMenuBtn" title="Sauvegarder & Exporter">💾 Export / Save</button>
+      <button class="icon-btn" id="journalBtn" title="Journal d'activités">📋</button>
+    </div>
   </header>
 
-  <nav class="tabs" id="tabs"></nav>
-  <main id="content"><div class="loading">Chargement du carnet…</div></main>
+  <nav class="tabs" id="tabsNav"></nav>
+
+  <main id="content">
+    <div class="loading">Chargement des données...</div>
+  </main>
 </div>
 
-<div class="fab"><button class="add-btn" id="addBtn">+ Ajouter une intervention</button></div>
+<div class="fab">
+  <button class="add-btn" id="addBtn">+ Nouvelle intervention</button>
+</div>
 
-<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modal"></div></div>
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modal"></div>
+</div>
 
 <script>
 (function(){
+var PALETTE = ['#F0B429', '#E12D39', '#2EC4B6', '#3A86FF', '#8338EC', '#FF006E', '#00F5D4', '#FF9F1C'];
 
 var DEFAULT_TYPES = [
-  { id:'vidange',    label:'Vidange (huile + filtre)',   km:15000, months:12 },
-  { id:'ct',         label:'Controle technique',          km:null,  months:24 },
-  { id:'filtre_air', label:'Filtre a air',                km:20000, months:24 },
-  { id:'filtre_hab', label:'Filtre habitacle',            km:15000, months:12 },
-  { id:'freins',     label:'Plaquettes / disques de frein', km:30000, months:null },
-  { id:'pneus',      label:'Pneus',                       km:null,  months:null },
-  { id:'batterie',   label:'Batterie',                    km:null,  months:48 },
-  { id:'courroie',   label:'Courroie de distribution',    km:100000,months:60 },
-  { id:'autre',      label:'Autre intervention',          km:null,  months:null }
+  { id: 'vidange', label: 'Vidange moteur', km: 15000, months: 12 },
+  { id: 'filtre-huile', label: 'Filtre à huile', km: 15000, months: 12 },
+  { id: 'filtre-air', label: 'Filtre à air', km: 30000, months: 24 },
+  { id: 'filtre-habitacle', label: 'Filtre habitacle', km: 15000, months: 12 },
+  { id: 'distribution', label: 'Courroie de distribution', km: 100000, months: 60 },
+  { id: 'freins-avant', label: 'Plaquettes / Disques AV', km: 40000, months: null },
+  { id: 'ct', label: 'Contrôle Technique', km: null, months: 24 }
 ];
-var PALETTE = ['#3B7EA8','#C85A2E','#5C8A5A','#8567A8','#3F8F8A','#B0555F','#9A7B3B','#5E6BAE'];
-var MAX_DOC_BYTES = 4700000;
 
-var state = null;
+var state = {
+  vehicles: {},
+  entries: {},
+  order: [],
+  types: DEFAULT_TYPES.slice(),
+  journal: []
+};
+
 var activeVehicleId = null;
 var editingEntryId = null;
 
-function cloneTypes(){ return DEFAULT_TYPES.map(function(t){ return { id:t.id, label:t.label, km:t.km, months:t.months }; }); }
-
-function typeLabel(id){
-  for(var i=0;i<state.types.length;i++){ if(state.types[i].id===id) return state.types[i].label; }
-  return id;
+function escapeHtml(str){
+  if(!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function genId(prefix){ return prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7); }
+function slugify(str){
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'custom-'+Date.now();
+}
+
+function genId(prefix){
+  return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+}
+
+function fmtKm(km){
+  if(km == null || isNaN(km)) return '—';
+  return km.toLocaleString('fr-FR') + ' km';
+}
+
+function fmtDate(dStr){
+  if(!dStr) return '—';
+  var parts = dStr.split('-');
+  if(parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
+  return dStr;
+}
+
+function fmtDateTime(ts){
+  if(!ts) return '—';
+  var d = new Date(ts);
+  if(isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function iconSvg(){
+  return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>';
+}
+
+function gearSvg(){
+  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+}
+
+function trashSvg(){
+  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+}
 
 function makeVehicle(name, color, enabledTypes){
-  var intervals = {};
-  state.types.forEach(function(t){ intervals[t.id] = { km: t.km, months: t.months }; });
-  return { name: name, color: color, plate:'', mileage:0, intervals: intervals, enabledTypes: enabledTypes.slice(), documents: [] };
-}
-
-function defaultState(){
-  var types = cloneTypes();
-  var allIds = types.map(function(t){ return t.id; });
-  var s = { order: [], vehicles: {}, entries: {}, types: types, journal: [] };
-  state = s;
-  s.order = ['kangoo','c3','caravane'];
-  s.vehicles.kangoo = makeVehicle('Kangoo', PALETTE[0], allIds);
-  s.vehicles.c3 = makeVehicle('C3 Aircross', PALETTE[1], allIds);
-  s.vehicles.caravane = makeVehicle('Caravane', PALETTE[2], allIds);
-  s.entries = { kangoo: [], c3: [], caravane: [] };
-  return s;
-}
-
-function migrate(raw){
-  if(!raw || typeof raw !== 'object' || !raw.order || !raw.vehicles) return defaultState();
-  if(!raw.types || !raw.types.length) raw.types = cloneTypes();
-  if(!raw.journal) raw.journal = [];
-  var allIds = raw.types.map(function(t){ return t.id; });
-  raw.entries = raw.entries || {};
-  raw.order.forEach(function(id, idx){
-    var v = raw.vehicles[id];
-    if(!v) return;
-    if(!v.color) v.color = PALETTE[idx % PALETTE.length];
-    if(!v.intervals) v.intervals = {};
-    if(!v.enabledTypes) v.enabledTypes = allIds.slice();
-    if(!v.documents) v.documents = [];
-    if(typeof v.mileage !== 'number') v.mileage = 0;
-    if(!raw.entries[id]) raw.entries[id] = [];
-    raw.entries[id].forEach(function(e){
-      if(!e.documents) e.documents = [];
-      if(!e.createdAt) e.createdAt = (e.date ? e.date+'T00:00:00.000Z' : new Date().toISOString());
-      if(!e.updatedAt) e.updatedAt = e.createdAt;
-    });
-  });
-  return raw;
-}
-
-// ---- Synchronisation cloud Supabase ----
-// 1) Creez un projet Supabase.
-// 2) Activez Google dans Authentication > Providers.
-// 3) Creez la table user_data avec: user_id uuid primary key, state jsonb, updated_at timestamptz.
-// 4) Ajoutez une policy RLS permettant a chaque utilisateur de lire/ecrire uniquement sa ligne.
-// 5) Creez un bucket Storage "vehicle-documents" et ses policies utilisateur.
-var SUPABASE_URL = 'https://fobqmyntdlhcepszkwuw.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvYnFteW50ZGxoY2Vwc3prd3V3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4OTI1ODgsImV4cCI6MjEwMjQ2ODU4OH0.wESETjGomzxKa53aQEeKprqDcm1oSFoXIvEJw8gc3EY';
-var sb = null;
-var currentUser = null;
-var cloudReady = false;
-
-function initCloud(){
-  if(!window.supabase || SUPABASE_URL.indexOf('COLLER_ICI')===0){
-    document.getElementById('authStatus').textContent='Il faut encore connecter Supabase (je peux te guider).';
-    return false;
-  }
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  cloudReady = true;
-  return true;
-}
-
-async function signInEmail(){
-  if(!initCloud()) return;
-  var email = document.getElementById('emailInput').value.trim();
-  var password = document.getElementById('passInput').value;
-  if(!email || !password){ document.getElementById('authStatus').textContent='Renseignez votre e-mail et mot de passe.'; return; }
-  document.getElementById('authStatus').textContent='Connexion en cours…';
-  var {data, error} = await sb.auth.signInWithPassword({ email: email, password: password });
-  if(error) document.getElementById('authStatus').textContent='Erreur : ' + error.message;
-}
-
-async function signOutCloud(){
-  if(sb) await sb.auth.signOut();
-  currentUser=null;
-  document.getElementById('authOverlay').style.display='flex';
-}
-
-async function loadState(){
-  if(!cloudReady) return;
-  var {data:{session}}=await sb.auth.getSession();
-  if(!session){ document.getElementById('authOverlay').style.display='flex'; return; }
-  currentUser=session.user;
-  var {data,error}=await sb.from('user_data').select('state').eq('user_id',currentUser.id).maybeSingle();
-  if(error){ console.error(error); state=defaultState(); }
-  else if(data && data.state) state=migrate(data.state);
-  else state=defaultState();
-  activeVehicleId=state.order[0]||null;
-  await persist();
-  document.getElementById('authOverlay').style.display='none';
-  render();
-}
-
-async function persist(){
-  if(!sb || !currentUser || !state) return;
-  var {error}=await sb.from('user_data').upsert({user_id:currentUser.id,state:state,updated_at:new Date().toISOString()},{onConflict:'user_id'});
-  if(error) console.error('Erreur de sauvegarde cloud',error);
+  return {
+    name: name,
+    plate: '',
+    color: color,
+    mileage: 0,
+    documents: [],
+    enabledTypes: enabledTypes || DEFAULT_TYPES.map(function(t){ return t.id; }),
+    intervals: {}
+  };
 }
 
 function logEvent(vehicleId, message){
-  var vname = '';
-  if(vehicleId && state.vehicles[vehicleId]) vname = state.vehicles[vehicleId].name;
-  state.journal.push({ id: genId('j'), ts: new Date().toISOString(), vehicleId: vehicleId, vehicleName: vname, message: message });
-  if(state.journal.length > 500) state.journal.splice(0, state.journal.length-500);
-}
-
-function fmtDate(iso){
-  if(!iso) return '\u2014';
-  var d = new Date(iso+'T00:00:00');
-  return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
-}
-function fmtDateTime(iso){
-  if(!iso) return '\u2014';
-  var d = new Date(iso);
-  return d.toLocaleDateString('fr-FR') + ' \u00b7 ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-}
-function fmtKm(n){ return Number(n||0).toLocaleString('fr-FR') + ' km'; }
-function monthsBetween(a,b){ return (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth()) + (b.getDate()-a.getDate())/30; }
-
-function lastEntryOfType(vehicleId, typeId){
-  var list = (state.entries[vehicleId]||[]).filter(function(e){ return e.typeId===typeId; });
-  if(!list.length) return null;
-  list = list.slice().sort(function(a,b){ return new Date(b.date)-new Date(a.date); });
-  return list[0];
-}
-
-function getEnabledTypes(v){ return state.types.filter(function(t){ return v.enabledTypes.indexOf(t.id) > -1; }); }
-
-function computeGauge(vehicleId, typeId){
-  var v = state.vehicles[vehicleId];
-  var interval = v.intervals[typeId] || {};
-  if(!interval.km && !interval.months) return null;
-  var last = lastEntryOfType(vehicleId, typeId);
-  if(!last) return { hasData:false };
-  var kmProgress = null, monthProgress = null;
-  if(interval.km) kmProgress = (v.mileage - last.km) / interval.km;
-  if(interval.months) monthProgress = monthsBetween(new Date(last.date), new Date()) / interval.months;
-  var progress = Math.max(kmProgress===null?-Infinity:kmProgress, monthProgress===null?-Infinity:monthProgress);
-  var pct = Math.max(0, Math.min(progress, 1.3)) / 1.3 * 100;
-  var color = 'var(--green)';
-  if(progress >= 1) color = 'var(--red)';
-  else if(progress >= 0.75) color = 'var(--yellow)';
-  return { hasData:true, pct:pct, color:color, statusText: remainingText(interval, v, last) };
-}
-
-function remainingText(interval, v, last){
-  var parts = [];
-  if(interval.km){
-    var rem = Math.round(interval.km - (v.mileage - last.km));
-    parts.push((rem>=0?'Dans ':'Depasse de ') + Math.abs(rem).toLocaleString('fr-FR') + ' km');
+  var vehicleName = null;
+  if(vehicleId && state.vehicles[vehicleId]){
+    vehicleName = state.vehicles[vehicleId].name;
   }
-  if(interval.months && !interval.km){
-    var elapsed = monthsBetween(new Date(last.date), new Date());
-    var remM = Math.round(interval.months - elapsed);
-    parts.push((remM>=0?'Dans ':'Depasse de ') + Math.abs(remM) + ' mois');
-  }
-  return parts.join(' \u00b7 ');
-}
-
-function iconSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>'; }
-function gearSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>'; }
-function trashSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"></path></svg>'; }
-function fileIconSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>'; }
-
-function escapeHtml(s){ var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function slugify(s){
-  var base = s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,24);
-  return 'ct_' + (base || 'type') + '_' + Math.random().toString(36).slice(2,5);
-}
-
-// ---- Gestion des fichiers (photos / documents) ----
-function readFileAsDataUrl(file){
-  return new Promise(function(resolve,reject){
-    var reader = new FileReader();
-    reader.onload = function(){ resolve(reader.result); };
-    reader.onerror = function(){ reject(reader.error); };
-    reader.readAsDataURL(file);
+  state.journal.push({
+    id: genId('j'),
+    ts: new Date().toISOString(),
+    vehicleId: vehicleId || null,
+    vehicleName: vehicleName,
+    message: message
   });
 }
-function resizeImageDataUrl(dataUrl, maxDim, quality){
-  return new Promise(function(resolve,reject){
-    var img = new Image();
-    img.onload = function(){
-      var w = img.width, h = img.height;
-      var scale = Math.min(1, maxDim / Math.max(w,h));
-      var cw = Math.max(1, Math.round(w*scale)), ch = Math.max(1, Math.round(h*scale));
-      var canvas = document.createElement('canvas');
-      canvas.width = cw; canvas.height = ch;
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(img,0,0,cw,ch);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = function(){ reject(new Error('Image illisible')); };
-    img.src = dataUrl;
-  });
+
+// Persistance Locale Garantie
+function persist(){
+  try {
+    localStorage.setItem('cb_data', JSON.stringify(state));
+  } catch(e) {
+    console.error('Erreur de sauvegarde locale :', e);
+  }
 }
-async function processFile(file){
-  if (!sb || !currentUser) {
-    throw new Error("Vous devez être connecté pour envoyer un document.");
+
+function loadState(){
+  try {
+    var raw = localStorage.getItem('cb_data');
+    if(raw){
+      state = JSON.parse(raw);
+    } else {
+      initDefaultState();
+    }
+  } catch(e) {
+    console.error('Erreur de chargement :', e);
+    initDefaultState();
   }
 
-  // Nettoyage du nom de fichier (sans caractères spéciaux)
-  var cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, "_");
-  var filePath = currentUser.id + '/' + Date.now() + '_' + cleanFileName;
+  if(!state.types || !state.types.length) state.types = DEFAULT_TYPES.slice();
+  if(!state.journal) state.journal = [];
+  if(!state.order) state.order = [];
+  if(!state.vehicles) state.vehicles = {};
+  if(!state.entries) state.entries = {};
 
-  // 1. Envoi du fichier dans Supabase Storage
-  var { data, error } = await sb.storage
-    .from('vehicle-documents')
-    .upload(filePath, file, { cacheControl: '3600', upsert: true });
-
-  if (error) {
-    console.error("Erreur Storage :", error);
-    alert("Impossible d'envoyer la photo : " + error.message);
-    throw new Error("Erreur Supabase Storage : " + error.message);
+  if(state.order.length > 0 && (!activeVehicleId || !state.vehicles[activeVehicleId])){
+    activeVehicleId = state.order[0];
   }
 
-  // 2. Génération de l'URL publique
-  var { data: publicUrlData } = sb.storage
-    .from('vehicle-documents')
-    .getPublicUrl(filePath);
+  render();
+}
 
-  var publicUrl = publicUrlData.publicUrl;
+function initDefaultState(){
+  var v1 = genId('v');
+  var allTypes = DEFAULT_TYPES.map(function(t){ return t.id; });
 
-  return { 
-    name: file.name, 
-    mime: file.type || 'application/octet-stream', 
-    dataUrl: publicUrl, 
-    thumb: publicUrl, 
-    size: file.size 
+  state = {
+    vehicles: {},
+    entries: {},
+    order: [v1],
+    types: DEFAULT_TYPES.slice(),
+    journal: []
+  };
+
+  state.vehicles[v1] = makeVehicle('Mon Véhicule', PALETTE[0], allTypes);
+  state.vehicles[v1].mileage = 100000;
+  state.vehicles[v1].plate = 'AA-123-BB';
+
+  state.entries[v1] = [
+    { id: genId('e'), typeId: 'vidange', date: new Date().toISOString().substring(0, 10), km: 100000, notes: 'Première vidange enregistrée', documents: [] }
+  ];
+
+  logEvent(v1, 'Carnet d\'entretien initialisé');
+  persist();
+}
+
+function getTypeConfig(vehicle, typeId){
+  var globalType = state.types.filter(function(t){ return t.id === typeId; })[0];
+  if(!globalType) return null;
+  var custom = (vehicle.intervals && vehicle.intervals[typeId]) || {};
+  return {
+    id: globalType.id,
+    label: globalType.label,
+    km: custom.km !== undefined ? custom.km : globalType.km,
+    months: custom.months !== undefined ? custom.months : globalType.months
   };
 }
-function renderDocChips(docs){
-  if(!docs || !docs.length) return '';
-  return docs.map(function(d){
-    var imgSrc = d.url || d.thumb || d.dataUrl || '';
-    return '<div class="doc-chip" data-doc-open="'+d.id+'">' +
-      (imgSrc ? '<img src="'+imgSrc+'" class="doc-chip-thumb" alt="">' : '📄 ') +
-      '<span class="doc-chip-name">'+escapeHtml(d.name)+'</span>' +
-      '<button class="doc-chip-del" data-doc-remove="'+d.id+'" title="Supprimer">\u2715</button>' +
-    '</div>';
-  }).join('');
-}
-async function openDocument(docOrId) {
-  try {
-    var url = null;
 
-    // 1. Si on reçoit directement un objet document (avec une URL Cloud)
-    if (typeof docOrId === 'object' && docOrId !== null) {
-      url = docOrId.url || docOrId.dataUrl || docOrId.thumb;
-    } 
-    // 2. Si on reçoit un ID, on cherche d'abord dans les données des véhicules
-    else if (typeof docOrId === 'string') {
-      // Cherche dans les véhicules pour trouver le document correspondant
-      for (var vId in state.vehicles) {
-        var entries = state.entries[vId] || [];
-        for (var i = 0; i < entries.length; i++) {
-          var docs = entries[i].documents || [];
-          for (var j = 0; j < docs.length; j++) {
-            if (docs[j].id === docOrId) {
-              url = docs[j].url || docs[j].dataUrl;
-              break;
-            }
-          }
-        }
-      }
-      // Récupération de secours dans le localStorage pour les anciens fichiers
-      if (!url) {
-        url = localStorage.getItem('doc:' + docOrId);
-      }
-    }
-
-    if (!url) {
-      throw new Error('Document introuvable.');
-    }
-
-    // Si c'est une URL Cloud Supabase, on l'ouvre directement
-    if (url.startsWith('http')) {
-      window.open(url, '_blank');
-      return;
-    }
-
-    // Sinon (ancien format base64), on l'ouvre dans une nouvelle fenêtre
-    var w = window.open('', '_blank');
-    if (w) {
-      w.document.write(
-        '<title>Document</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="' +
-          url +
-          '" style="max-width:100%;max-height:100vh;" onerror="this.outerHTML=\'<a href=&quot;' +
-          url +
-          '&quot; download style=&quot;color:#fff;font-family:sans-serif;&quot;>Telecharger le fichier</a>\'"></body>'
-      );
-    }
-  } catch (e) {
-    alert('Impossible d\u2019ouvrir ce document : ' + e.message);
-  }
+function getLatestEntry(vehicleId, typeId){
+  var list = state.entries[vehicleId] || [];
+  var filtered = list.filter(function(e){ return e.typeId === typeId; });
+  if(!filtered.length) return null;
+  filtered.sort(function(a,b){
+    if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return (b.km || 0) - (a.km || 0);
+  });
+  return filtered[0];
 }
 
-async function addVehicleDocuments(fileList){
-  if (!activeVehicleId) return;
-  var v = state.vehicles[activeVehicleId];
-  if (!v) return;
-  if (!v.documents) v.documents = [];
+function computeStatus(vehicleId, typeId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return null;
+  var cfg = getTypeConfig(v, typeId);
+  if(!cfg) return null;
 
-  for(var i=0; i<fileList.length; i++){
-    try{
-      var processed = await processFile(fileList[i]);
-      var id = genId('doc');
-      
-      v.documents.push({ 
-        id: id, 
-        name: processed.name, 
-        mime: processed.mime, 
-        url: processed.dataUrl, 
-        thumb: processed.thumb, 
-        size: processed.size, 
-        addedAt: new Date().toISOString() 
-      });
-      
-      logEvent(activeVehicleId, 'Document ajouté au véhicule : ' + processed.name);
-    } catch(err){ 
-      alert(err.message || 'Erreur lors de l’ajout du fichier.'); 
-    }
+  var last = getLatestEntry(vehicleId, typeId);
+  var currentKm = v.mileage || 0;
+
+  var result = {
+    cfg: cfg,
+    last: last,
+    pct: 0,
+    remainingKm: null,
+    remainingDays: null,
+    isOverdue: false,
+    isWarning: false
+  };
+
+  if(!last) return result;
+
+  var pctKm = 0;
+  if(cfg.km && cfg.km > 0){
+    var doneKm = currentKm - (last.km || 0);
+    result.remainingKm = cfg.km - doneKm;
+    pctKm = Math.min(100, Math.max(0, (doneKm / cfg.km) * 100));
+    if(result.remainingKm <= 0) result.isOverdue = true;
+    else if(result.remainingKm <= 1000) result.isWarning = true;
   }
 
-  await persist();
+  var pctDays = 0;
+  if(cfg.months && cfg.months > 0 && last.date){
+    var lastDate = new Date(last.date);
+    var nextDate = new Date(lastDate);
+    nextDate.setMonth(nextDate.getMonth() + cfg.months);
+    
+    var now = new Date();
+    var diffMs = nextDate - now;
+    result.remainingDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    
+    var totalDays = cfg.months * 30.4375;
+    var doneDays = totalDays - result.remainingDays;
+    pctDays = Math.min(100, Math.max(0, (doneDays / totalDays) * 100));
+
+    if(result.remainingDays <= 0) result.isOverdue = true;
+    else if(result.remainingDays <= 30) result.isWarning = true;
+  }
+
+  result.pct = Math.max(pctKm, pctDays);
+  return result;
+}
+
+function render(){
+  renderTabs();
   renderContent();
 }
-
-async function deleteVehicleDocument(docId){
-  var v = state.vehicles[activeVehicleId];
-  if(!v || !v.documents) return;
-  
-  var doc = v.documents.filter(function(d){ return d.id===docId; })[0];
-  if(!doc) return;
-  if(!confirm('Supprimer "' + doc.name + '" ?')) return;
-
-  v.documents = v.documents.filter(function(d){ return d.id!==docId; });
-  
-  logEvent(activeVehicleId, 'Document supprimé du véhicule : ' + doc.name);
-  await persist();
-  renderContent();
-}
-
-async function addEntryDocuments(entry, fileList) {
-  if (!entry) return;
-  if (!entry.documents) entry.documents = [];
-
-  for (var i = 0; i < fileList.length; i++) {
-    try {
-      // 1. Upload sur Supabase Storage
-      var processed = await processFile(fileList[i]);
-      var id = genId('doc');
-
-      // 2. Ajout du document dans le tableau local
-      entry.documents.push({
-        id: id,
-        name: processed.name,
-        mime: processed.mime,
-        url: processed.dataUrl, // URL publique Supabase Storage
-        thumb: processed.thumb,
-        size: processed.size,
-        addedAt: new Date().toISOString()
-      });
-
-      logEvent(activeVehicleId,
-        'Document ajoute a l\u2019intervention "' +
-          (entry.typeLabelSnapshot || typeLabel(entry.typeId)) +
-          '" : ' +
-          processed.name
-      );
-    } catch (err) {
-      alert(err.message || 'Erreur lors de l\u2019ajout du fichier.');
-    }
-  }
-
-  // 3. FORCE la sauvegarde sur Supabase Cloud
-  await persist();
-
-  // 4. Mettre à jour la fenêtre modale sans fermer
-  openEntryModal(entry);
-}
-async function deleteEntryDocument(entry, docId){
-  var doc = entry.documents.filter(function(d){ return d.id===docId; })[0];
-  if(!doc) return;
-  if(!confirm('Supprimer "'+doc.name+'" ?')) return;
-
-  // 1. Retrait du document de la liste de l'intervention
-  entry.documents = entry.documents.filter(function(d){ return d.id!==docId; });
-
-  // 2. Nettoyage de secours sur l'ancien système local
-  
-  logEvent(activeVehicleId, 'Document supprime de l\u2019intervention "' + (entry.typeLabelSnapshot||typeLabel(entry.typeId)) + '" : ' + doc.name);
-
-  // 3. Sauvegarde de la suppression sur le Cloud Supabase
-  await persist();
-  openEntryModal(entry);
-}
-
-function render(){ renderTabs(); renderContent(); }
 
 function renderTabs(){
-  var tabs = document.getElementById('tabs');
-  tabs.innerHTML = '';
-  state.order.forEach(function(id){
+  var nav = document.getElementById('tabsNav');
+  if(!nav) return;
+  
+  var html = state.order.map(function(id){
     var v = state.vehicles[id];
-    var btn = document.createElement('button');
-    btn.className = 'tab-btn' + (id===activeVehicleId ? ' active' : '');
-    btn.textContent = v.name;
-    btn.style.borderBottomColor = id===activeVehicleId ? v.color : 'transparent';
-    btn.onclick = function(){ activeVehicleId = id; render(); };
-    tabs.appendChild(btn);
-  });
-  var addTab = document.createElement('button');
-  addTab.className = 'tab-add';
-  addTab.textContent = '+';
-  addTab.title = 'Ajouter un vehicule';
-  addTab.onclick = openAddVehicleModal;
-  tabs.appendChild(addTab);
-}
+    if(!v) return '';
+    var activeClass = (id === activeVehicleId) ? ' active' : '';
+    var style = (id === activeVehicleId) ? 'border-bottom-color:' + (v.color || 'var(--yellow)') + '; color:' + (v.color || 'var(--yellow)') + ';' : '';
+    return '<button class="tab-btn' + activeClass + '" style="' + style + '" data-id="' + id + '">' + escapeHtml(v.name) + '</button>';
+  }).join('');
 
-function getVehicleStats(vehicleId) {
-  var entries = state.entries[vehicleId] || [];
-  if (!entries.length) return null;
+  html += '<button class="tab-add" id="addVehicleTabBtn" title="Ajouter un véhicule">+</button>';
+  nav.innerHTML = html;
 
-  var totalCost = 0;
-  var minKm = Infinity, maxKm = -Infinity;
-  var costsByType = {};
-
-  entries.forEach(function(e) {
-    if (e.cost) {
-      var costNum = Number(e.cost);
-      totalCost += costNum;
-      var typeName = e.typeLabelSnapshot || typeLabel(e.typeId);
-      costsByType[typeName] = (costsByType[typeName] || 0) + costNum;
-    }
-    if (e.km) {
-      if (e.km < minKm) minKm = e.km;
-      if (e.km > maxKm) maxKm = e.km;
-    }
+  Array.prototype.forEach.call(nav.querySelectorAll('.tab-btn'), function(btn){
+    btn.onclick = function(){
+      activeVehicleId = btn.getAttribute('data-id');
+      render();
+    };
   });
 
-  var kmDriven = (maxKm > minKm && minKm !== Infinity) ? (maxKm - minKm) : 0;
-  var costPerKm = kmDriven > 0 ? (totalCost / kmDriven).toFixed(2) : '0.00';
-
-  return {
-    totalCost: totalCost,
-    kmDriven: kmDriven,
-    costPerKm: costPerKm,
-    costsByType: costsByType
-  };
+  var addTab = document.getElementById('addVehicleTabBtn');
+  if(addTab) addTab.onclick = openAddVehicleModal;
 }
 
 function renderContent(){
   var content = document.getElementById('content');
-  var v = state.vehicles[activeVehicleId];
-  if(!v){ content.innerHTML = '<div class="empty-state">Aucun vehicule. Ajoutez-en un avec le bouton +.</div>'; return; }
-  var entries = (state.entries[activeVehicleId]||[]).slice().sort(function(a,b){ return new Date(b.date)-new Date(a.date); });
+  if(!content) return;
 
-  var html = '';
-  html += '<div class="vehicle-header" style="--accent:'+v.color+'">';
-  html += '  <div class="row1">';
-  html += '    <div>';
-  html += '      <p class="vehicle-name">'+escapeHtml(v.name)+'</p>';
-  html += '      <input class="vehicle-plate-input" id="plateInput" placeholder="Immatriculation" value="'+escapeHtml(v.plate||'')+'">';
-  html += '    </div>';
-  html += '    <button class="icon-btn" id="settingsBtn" title="Reglages">'+ gearSvg() +'</button>';
-  html += '  </div>';
-  html += '  <div class="mileage-row">';
-  html += '    <input type="number" class="mileage-input" id="mileageInput" value="'+v.mileage+'">';
-  html += '    <span class="mileage-unit">km au compteur</span>';
-  html += '  </div>';
-  html += '  <div class="doc-section"><div class="doc-section-label">Photos &amp; documents du vehicule</div>';
-  html += '    <div class="doc-chip-row" id="vehicleDocRow">' + renderDocChips(v.documents) + '<button class="doc-add-btn" id="vehicleDocAddBtn" title="Ajouter">+</button></div>';
-  html += '    <input type="file" id="vehicleDocInput" accept="image/*,.pdf" multiple style="display:none;">';
-  html += '  </div>';
+  var v = state.vehicles[activeVehicleId];
+  if(!v){
+    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button></div>';
+    return;
+  }
+
+  document.documentElement.style.setProperty('--accent', v.color || 'var(--yellow)');
+  var entries = state.entries[activeVehicleId] || [];
+
+  var html = '<div class="vehicle-header" style="--accent:' + (v.color || 'var(--yellow)') + '">';
+  html += '<div class="row1">';
+  html += '<div>';
+  html += '<h1 class="vehicle-name">' + escapeHtml(v.name) + '</h1>';
+  html += '<input type="text" class="vehicle-plate-input" id="v-plate" value="' + escapeHtml(v.plate || '') + '" placeholder="Immatriculation (ex: AA-123-BB)">';
+  html += '</div>';
+  
+  html += '<div class="header-btns">';
+  html += '<button class="icon-btn" onclick="window.print()" title="Imprimer ou Sauvegarder en PDF">🖨️ Imprimer / PDF</button>';
+  html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule">' + gearSvg() + ' Réglages</button>';
   html += '</div>';
 
-  var gaugeTypes = getEnabledTypes(v).filter(function(t){ var iv = v.intervals[t.id]||{}; return iv.km || iv.months; });
-  html += '<section><h2 class="section-title">Prochaines echeances</h2>';
-  var anyGauge = false;
-  gaugeTypes.forEach(function(t){
-    var g = computeGauge(activeVehicleId, t.id);
-    if(!g) return;
-    anyGauge = true;
-    html += '<div class="gauge-card">';
-    html += '  <div class="gauge-top"><span class="gauge-label">'+t.label+'</span>';
-    if(g.hasData){
-      html += '<span class="gauge-status" style="color:'+g.color+'">'+g.statusText+'</span></div>';
-      html += '<div class="gauge-track"><div class="fill" style="width:'+g.pct+'%;background:'+g.color+'"></div></div>';
+  html += '</div>';
+
+  html += '<div class="mileage-row">';
+  html += '<input type="number" class="mileage-input" id="v-km" value="' + (v.mileage || 0) + '">';
+  html += '<span class="mileage-unit">km parcourus</span>';
+  html += '</div>';
+
+  html += '<div class="doc-section">';
+  html += '<div class="doc-section-label">Documents (carte grise, assurance...)</div>';
+  html += '<div class="doc-chip-row">';
+  
+  (v.documents || []).forEach(function(doc, idx){
+    html += '<div class="doc-chip">';
+    if(doc.type && doc.type.indexOf('image/') === 0){
+      html += '<div class="doc-thumb" onclick="window.open(\'' + doc.data + '\',\'_blank\')"><img src="' + doc.data + '" alt="' + escapeHtml(doc.name) + '"></div>';
     } else {
-      html += '<span class="gauge-status gauge-empty">Aucune donnee</span></div>';
-      html += '<div class="gauge-track"><div class="fill" style="width:0%"></div></div>';
+      html += '<div class="doc-thumb" onclick="window.open(\'' + doc.data + '\',\'_blank\')">📄</div>';
     }
+    html += '<div class="doc-name" title="' + escapeHtml(doc.name) + '">' + escapeHtml(doc.name) + '</div>';
+    html += '<button class="doc-remove" data-idx="' + idx + '" title="Supprimer">✕</button>';
     html += '</div>';
   });
-  if(!anyGauge) html += '<div class="empty-state">Aucune echeance suivie. Activez un type dans les reglages ou ajoutez une intervention.</div>';
-  html += '</section>';
 
-var stats = getVehicleStats(activeVehicleId);
-  html += '<section><h2 class="section-title">Analyse Financière</h2>';
-  if (!stats || stats.totalCost === 0) {
-    html += '<div class="empty-state">Renseignez le coût de vos interventions dans l’historique pour voir les statistiques.</div>';
+  html += '<button class="doc-add-btn" id="addDocBtn" title="Ajouter un document">+</button>';
+  html += '<input type="file" id="docFileInput" style="display:none;" accept="image/*,application/pdf">';
+  html += '</div></div>';
+  html += '</div>';
+
+  // Section : Échéances
+  html += '<section>';
+  html += '<h2 class="section-title">Échéances d\'entretien</h2>';
+  
+  var enabled = v.enabledTypes || [];
+  if(!enabled.length){
+    html += '<div class="gauge-empty">Aucun type d\'entretien activé pour ce véhicule.</div>';
   } else {
-    html += '<div class="gauge-card" style="display:flex; justify-content:space-around; text-align:center; padding:16px 8px;">';
-    html += '  <div>';
-    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Coût Total</div>';
-    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--yellow); margin-top:4px;">' + stats.totalCost.toLocaleString('fr-FR') + ' €</div>';
-    html += '  </div>';
-    html += '  <div style="border-left:1px solid var(--border); border-right:1px solid var(--border); padding:0 12px;">';
-    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Distance suivie</div>';
-    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--text); margin-top:4px;">' + stats.kmDriven.toLocaleString('fr-FR') + ' km</div>';
-    html += '  </div>';
-    html += '  <div>';
-    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Coût / km</div>';
-    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--green); margin-top:4px;">' + stats.costPerKm + ' €</div>';
-    html += '  </div>';
-    html += '</div>';
+    enabled.forEach(function(typeId){
+      var st = computeStatus(activeVehicleId, typeId);
+      if(!st) return;
+
+      var barColor = 'var(--green)';
+      if(st.isOverdue) barColor = 'var(--red)';
+      else if(st.isWarning) barColor = 'var(--yellow)';
+
+      var statusText = 'Aucun historique';
+      if(st.last){
+        var parts = [];
+        if(st.remainingKm !== null){
+          if(st.remainingKm <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingKm) + ' km');
+          else parts.push('dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+        }
+        if(st.remainingDays !== null){
+          if(st.remainingDays <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingDays) + ' j');
+          else parts.push('dans ' + st.remainingDays + ' j');
+        }
+        statusText = parts.join(' ou ');
+      }
+
+      html += '<div class="gauge-card">';
+      html += '<div class="gauge-top">';
+      html += '<span class="gauge-label">' + escapeHtml(st.cfg.label) + '</span>';
+      html += '<span class="gauge-status" style="color:' + barColor + ';">' + escapeHtml(statusText) + '</span>';
+      html += '</div>';
+      html += '<div class="gauge-track">';
+      html += '<div class="fill" style="width:' + st.pct + '%; background:' + barColor + ';"></div>';
+      html += '</div>';
+      html += '</div>';
+    });
   }
   html += '</section>';
 
-  html += '<section><h2 class="section-title">Historique</h2>';
+  // Section : Historique
+  html += '<section>';
+  html += '<h2 class="section-title">Historique complet (' + entries.length + ')</h2>';
+  
   if(!entries.length){
-    html += '<div class="empty-state">Aucune intervention enregistree pour ce vehicule.</div>';
+    html += '<div class="empty-state">Aucune intervention enregistrée pour ce véhicule.</div>';
   } else {
-    entries.forEach(function(e){
-      var label = e.typeLabelSnapshot || typeLabel(e.typeId);
-      var hasDocs = e.documents && e.documents.length;
-      html += '<div class="history-row" data-id="'+e.id+'">';
-      html += '  <div class="history-icon" style="color:'+v.color+'">'+iconSvg()+(hasDocs?'<span class="doc-dot"></span>':'')+'</div>';
-      html += '  <div class="history-main">';
-      html += '    <div class="history-type">'+escapeHtml(label)+'</div>';
-      html += (e.notes ? '<div class="history-notes">'+escapeHtml(e.notes)+'</div>' : '');
-      html += '  </div>';
-      html += '  <div class="history-meta"><div class="km">'+fmtKm(e.km)+'</div><div>'+fmtDate(e.date)+'</div></div>';
+    var sortedEntries = entries.slice().sort(function(a,b){
+      if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+      return (b.km || 0) - (a.km || 0);
+    });
+
+    sortedEntries.forEach(function(entry){
+      var typeObj = state.types.filter(function(t){ return t.id === entry.typeId; })[0];
+      var label = typeObj ? typeObj.label : entry.typeId;
+      var hasDocs = entry.documents && entry.documents.length > 0;
+
+      html += '<div class="history-row" data-entry-id="' + entry.id + '">';
+      html += '<div class="history-icon" style="color:' + (v.color || 'var(--yellow)') + ';">' + iconSvg();
+      if(hasDocs) html += '<span class="doc-dot" title="Documents joints"></span>';
+      html += '</div>';
+      html += '<div class="history-main">';
+      html += '<div class="history-type">' + escapeHtml(label) + '</div>';
+      if(entry.notes) html += '<div class="history-notes">' + escapeHtml(entry.notes) + '</div>';
+      html += '</div>';
+      html += '<div class="history-meta">';
+      html += '<div class="km">' + fmtKm(entry.km) + '</div>';
+      html += '<div>' + fmtDate(entry.date) + '</div>';
+      html += '</div>';
       html += '</div>';
     });
   }
@@ -752,86 +572,107 @@ var stats = getVehicleStats(activeVehicleId);
 
   content.innerHTML = html;
 
-  document.getElementById('plateInput').addEventListener('change', async function(ev){ v.plate = ev.target.value; await persist(); });
-  document.getElementById('mileageInput').addEventListener('change', async function(ev){
-    var n = parseInt(ev.target.value||'0',10);
-    v.mileage = isNaN(n) ? v.mileage : n;
-    ev.target.value = v.mileage;
-    await persist();
-    renderContent();
-  });
-  document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+  // Bindings
+  var plateInput = document.getElementById('v-plate');
+  if(plateInput){
+    plateInput.onchange = function(){
+      v.plate = plateInput.value.trim();
+      logEvent(activeVehicleId, 'Immatriculation mise à jour');
+      persist();
+    };
+  }
 
-  var vdocRow = document.getElementById('vehicleDocRow');
-  Array.prototype.forEach.call(vdocRow.querySelectorAll('[data-doc-open]'), function(el){
-    el.addEventListener('click', function(){ openDocument(el.getAttribute('data-doc-open')); });
-  });
-  Array.prototype.forEach.call(vdocRow.querySelectorAll('[data-doc-remove]'), function(el){
-    el.addEventListener('click', function(ev){ ev.stopPropagation(); deleteVehicleDocument(el.getAttribute('data-doc-remove')); });
-  });
-  document.getElementById('vehicleDocAddBtn').addEventListener('click', function(){ document.getElementById('vehicleDocInput').click(); });
-  document.getElementById('vehicleDocInput').addEventListener('change', function(ev){
-    if(ev.target.files && ev.target.files.length){
-      var btn = document.getElementById('vehicleDocAddBtn');
-      if(btn){ btn.textContent = '\u22ef'; btn.style.pointerEvents = 'none'; }
-      addVehicleDocuments(ev.target.files);
-      ev.target.value='';
-    }
+  var kmInput = document.getElementById('v-km');
+  if(kmInput){
+    kmInput.onchange = function(){
+      var val = parseInt(kmInput.value, 10);
+      if(!isNaN(val) && val !== v.mileage){
+        v.mileage = val;
+        logEvent(activeVehicleId, 'Kilométrage mis à jour : ' + fmtKm(val));
+        persist();
+        renderContent();
+      }
+    };
+  }
+
+  var settingsBtn = document.getElementById('settingsBtn');
+  if(settingsBtn) settingsBtn.onclick = openSettingsModal;
+
+  var addDocBtn = document.getElementById('addDocBtn');
+  var docFileInput = document.getElementById('docFileInput');
+  if(addDocBtn && docFileInput){
+    addDocBtn.onclick = function(){ docFileInput.click(); };
+    docFileInput.onchange = function(e){
+      var file = e.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(evt){
+        if(!v.documents) v.documents = [];
+        v.documents.push({ name: file.name, type: file.type, data: evt.target.result });
+        logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
+        persist();
+        renderContent();
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  Array.prototype.forEach.call(content.querySelectorAll('.doc-remove'), function(btn){
+    btn.onclick = function(e){
+      e.stopPropagation();
+      var idx = parseInt(btn.getAttribute('data-idx'), 10);
+      if(!isNaN(idx) && v.documents && v.documents[idx]){
+        var removed = v.documents.splice(idx, 1)[0];
+        logEvent(activeVehicleId, 'Document supprimé : ' + removed.name);
+        persist();
+        renderContent();
+      }
+    };
   });
 
   Array.prototype.forEach.call(content.querySelectorAll('.history-row'), function(row){
-    row.addEventListener('click', function(){
-      var id = row.getAttribute('data-id');
-      var entry = null;
-      for(var i=0;i<entries.length;i++){ if(entries[i].id===id){ entry = entries[i]; break; } }
-      openEntryModal(entry);
-    });
+    row.onclick = function(){
+      var entryId = row.getAttribute('data-entry-id');
+      openEntryModal(entryId);
+    };
   });
 }
 
-// ---- Modal: add / edit entry ----
-function openEntryModal(entry){
+// Modales
+function openEntryModal(entryId){
+  editingEntryId = entryId;
   var v = state.vehicles[activeVehicleId];
-  var available = getEnabledTypes(v);
-  if(!available.length){
-    alert('Aucun type d\u2019intervention actif pour ce vehicule. Activez-en un dans les reglages (icone engrenage).');
-    return;
-  }
-  editingEntryId = entry ? entry.id : null;
-  var today = new Date().toISOString().slice(0,10);
+  if(!v) return;
+
+  var entries = state.entries[activeVehicleId] || [];
+  var entry = entryId ? entries.filter(function(e){ return e.id === entryId; })[0] : null;
+
+  var enabledTypes = v.enabledTypes || [];
+  var typeOptions = state.types
+    .filter(function(t){ return enabledTypes.indexOf(t.id) > -1 || (entry && entry.typeId === t.id); })
+    .map(function(t){
+      var selected = entry && entry.typeId === t.id ? ' selected' : '';
+      return '<option value="' + t.id + '"' + selected + '>' + escapeHtml(t.label) + '</option>';
+    }).join('');
+
   var modal = document.getElementById('modal');
-
-  var optionList = available.slice();
-  var hasCurrent = entry ? optionList.some(function(t){ return t.id===entry.typeId; }) : true;
-  if(entry && !hasCurrent){
-    optionList = [{ id: entry.typeId, label: entry.typeLabelSnapshot || typeLabel(entry.typeId) }].concat(optionList);
-  }
-  var optionsHtml = optionList.map(function(t){
-    return '<option value="'+t.id+'"'+(entry&&entry.typeId===t.id?' selected':'')+'>'+escapeHtml(t.label)+'</option>';
-  }).join('');
-
-  var title = entry ? 'Modifier l&rsquo;intervention' : 'Nouvelle intervention';
-  var meta = entry ? '<p style="color:var(--text-muted);font-size:11.5px;margin:-10px 0 14px;">Cree le '+fmtDateTime(entry.createdAt)+(entry.updatedAt && entry.updatedAt!==entry.createdAt ? ' \u00b7 modifie le '+fmtDateTime(entry.updatedAt) : '')+'</p>' : '';
-
-  var docsField = entry
-    ? '<div class="field"><label>Documents joints</label><div class="doc-chip-row" id="entryDocRow">' + renderDocChips(entry.documents) + '<button class="doc-add-btn" id="entryDocAddBtn">+</button></div><input type="file" id="entryDocInput" accept="image/*,.pdf" multiple style="display:none;"></div>'
-    : '<div class="field"><label>Documents joints</label><div class="empty-state" style="padding:14px;">Enregistrez d\u2019abord l\u2019intervention pour pouvoir y joindre des photos ou documents.</div></div>';
+  var title = entry ? 'Modifier l\'intervention' : 'Nouvelle intervention';
+  var dateVal = entry ? entry.date : new Date().toISOString().substring(0, 10);
+  var kmVal = entry ? entry.km : v.mileage;
+  var notesVal = entry ? (entry.notes || '') : '';
 
   modal.innerHTML =
-    '<h3>'+title+' <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
-    meta +
-    '<div class="field"><label>Type d&rsquo;intervention</label><select id="f-type">'+optionsHtml+'</select></div>' +
+    '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<div class="field"><label>Type d\'intervention</label><select id="f-type">' + typeOptions + '</select></div>' +
     '<div class="row2">' +
-    '  <div class="field"><label>Date</label><input type="date" id="f-date" value="'+(entry?entry.date:today)+'"></div>' +
-    '  <div class="field"><label>Kilometrage</label><input type="number" id="f-km" value="'+(entry?entry.km:v.mileage)+'"></div>' +
+      '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
+      '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
     '</div>' +
-    '<div class="field"><label>Cout (EUR, facultatif)</label><input type="number" id="f-cost" value="'+(entry && entry.cost!=null ? entry.cost : '')+'"></div>' +
-    '<div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Garage, pieces changees, remarques...">'+(entry?escapeHtml(entry.notes||''):'')+'</textarea></div>' +
-    docsField +
+    '<div class="field"><label>Notes / Observations</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
     '<div class="modal-actions">' +
-    (entry ? '<button class="btn btn-danger" id="deleteBtn">Supprimer</button>' : '') +
-    '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
-    '<button class="btn btn-primary" id="saveBtn">Enregistrer</button>' +
+      (entry ? '<button class="btn btn-danger" id="deleteBtn">Supprimer</button>' : '') +
+      '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
+      '<button class="btn btn-primary" id="saveBtn">Enregistrer</button>' +
     '</div>';
 
   document.getElementById('modalOverlay').classList.add('open');
@@ -839,122 +680,120 @@ function openEntryModal(entry){
   document.getElementById('cancelBtn').onclick = closeModal;
   document.getElementById('saveBtn').onclick = saveEntry;
   if(entry) document.getElementById('deleteBtn').onclick = function(){ deleteEntry(entry.id); };
-
-  if(entry){
-    var edocRow = document.getElementById('entryDocRow');
-    Array.prototype.forEach.call(edocRow.querySelectorAll('[data-doc-open]'), function(el){
-      el.addEventListener('click', function(){ openDocument(el.getAttribute('data-doc-open')); });
-    });
-    Array.prototype.forEach.call(edocRow.querySelectorAll('[data-doc-remove]'), function(el){
-      el.addEventListener('click', function(ev){ ev.stopPropagation(); deleteEntryDocument(entry, el.getAttribute('data-doc-remove')); });
-    });
-    document.getElementById('entryDocAddBtn').addEventListener('click', function(){ document.getElementById('entryDocInput').click(); });
-    document.getElementById('entryDocInput').addEventListener('change', function(ev){
-      if(ev.target.files && ev.target.files.length){
-        var btn = document.getElementById('entryDocAddBtn');
-        if(btn){ btn.textContent = '\u22ef'; btn.style.pointerEvents = 'none'; }
-        addEntryDocuments(entry, ev.target.files);
-        ev.target.value='';
-      }
-    });
-  }
 }
 
-async function saveEntry(){
+function saveEntry(){
   var typeId = document.getElementById('f-type').value;
   var date = document.getElementById('f-date').value;
-  var km = parseInt(document.getElementById('f-km').value||'0',10);
-  var costRaw = document.getElementById('f-cost').value;
-  var cost = costRaw==='' ? null : parseFloat(costRaw);
+  var km = parseInt(document.getElementById('f-km').value || '0', 10);
   var notes = document.getElementById('f-notes').value.trim();
+
   if(!date){ alert('Merci de renseigner une date.'); return; }
-  var snapshot = typeLabel(typeId);
+
+  var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
+  var label = typeObj ? typeObj.label : typeId;
   var now = new Date().toISOString();
 
-  var list = state.entries[activeVehicleId];
+  var list = state.entries[activeVehicleId] || [];
   if(editingEntryId){
-    for(var i=0;i<list.length;i++){
-      if(list[i].id===editingEntryId){
+    for(var i = 0; i < list.length; i++){
+      if(list[i].id === editingEntryId){
         list[i].typeId = typeId;
-        list[i].typeLabelSnapshot = snapshot;
         list[i].date = date;
         list[i].km = km;
-        list[i].cost = cost;
         list[i].notes = notes;
         list[i].updatedAt = now;
         break;
       }
     }
-    logEvent(activeVehicleId, 'Intervention modifiee : ' + snapshot + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
+    logEvent(activeVehicleId, 'Intervention modifiée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   } else {
-    list.push({ id: genId('e'), typeId: typeId, typeLabelSnapshot: snapshot, date: date, km: km, cost: cost, notes: notes, documents: [], createdAt: now, updatedAt: now });
-    logEvent(activeVehicleId, 'Intervention ajoutee : ' + snapshot + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
+    list.push({
+      id: genId('e'),
+      typeId: typeId,
+      date: date,
+      km: km,
+      notes: notes,
+      documents: [],
+      createdAt: now,
+      updatedAt: now
+    });
+    logEvent(activeVehicleId, 'Intervention ajoutée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   }
-  var v = state.vehicles[activeVehicleId];
-  if(km > v.mileage) v.mileage = km;
 
-  await persist();
+  var v = state.vehicles[activeVehicleId];
+  if(v && km > v.mileage) v.mileage = km;
+
+  persist();
   closeModal();
   renderContent();
 }
 
-async function deleteEntry(id){
+function deleteEntry(id){
   if(!confirm('Supprimer cette intervention ?')) return;
-  var list = state.entries[activeVehicleId];
-  var entry = list.filter(function(e){ return e.id===id; })[0];
+  var list = state.entries[activeVehicleId] || [];
+  var entry = list.filter(function(e){ return e.id === id; })[0];
+
   if(entry){
-    var docs = entry.documents || [];
-    for(var i=0;i<docs.length;i++){ try{ localStorage.removeItem('doc:'+docs[i].id); }catch(e){} }
-    logEvent(activeVehicleId, 'Intervention supprimee : ' + (entry.typeLabelSnapshot || typeLabel(entry.typeId)));
+    var typeObj = state.types.filter(function(t){ return t.id === entry.typeId; })[0];
+    var label = typeObj ? typeObj.label : entry.typeId;
+    logEvent(activeVehicleId, 'Intervention supprimée : ' + label);
   }
-  state.entries[activeVehicleId] = list.filter(function(e){ return e.id!==id; });
-  await persist();
+
+  state.entries[activeVehicleId] = list.filter(function(e){ return e.id !== id; });
+  persist();
   closeModal();
   renderContent();
 }
 
 function closeModal(){
-  document.getElementById('modalOverlay').classList.remove('open');
+  var overlay = document.getElementById('modalOverlay');
+  if(overlay) overlay.classList.remove('open');
   editingEntryId = null;
 }
 
-// ---- Modal: reglages vehicule ----
 function openSettingsModal(){
   var v = state.vehicles[activeVehicleId];
   var modal = document.getElementById('modal');
 
   var rows = state.types.map(function(t){
-    var iv = v.intervals[t.id] || {};
-    var enabled = v.enabledTypes.indexOf(t.id) > -1;
-    return '<div class="type-row'+(enabled?'':' disabled')+'">' +
-      '<input type="checkbox" data-toggle="'+t.id+'"'+(enabled?' checked':'')+'>' +
-      '<span class="name">'+escapeHtml(t.label)+'</span>' +
-      '<input type="number" data-type="'+t.id+'" data-field="km" value="'+(iv.km==null?'':iv.km)+'" placeholder="\u2014"><span class="unit">km</span>' +
-      '<input type="number" data-type="'+t.id+'" data-field="months" value="'+(iv.months==null?'':iv.months)+'" placeholder="\u2014"><span class="unit">mois</span>' +
-      '<button class="trash-btn" data-deltype="'+t.id+'" title="Supprimer ce type pour tous les vehicules">'+trashSvg()+'</button>' +
+    var iv = (v.intervals && v.intervals[t.id]) || {};
+    var enabled = (v.enabledTypes || []).indexOf(t.id) > -1;
+    var kmVal = iv.km !== undefined ? iv.km : t.km;
+    var monthsVal = iv.months !== undefined ? iv.months : t.months;
+
+    return '<div class="type-row' + (enabled ? '' : ' disabled') + '">' +
+      '<input type="checkbox" data-toggle="' + t.id + '"' + (enabled ? ' checked' : '') + '>' +
+      '<span class="name">' + escapeHtml(t.label) + '</span>' +
+      '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
+      '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
+      '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
       '</div>';
   }).join('');
 
   var canDelete = state.order.length > 1;
 
   modal.innerHTML =
-    '<h3>Reglages du vehicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
-    '<div class="field"><label>Nom du vehicule</label><input type="text" id="s-name" value="'+escapeHtml(v.name)+'"></div>' +
+    '<h3>Réglages du véhicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<div class="field"><label>Nom du véhicule</label><input type="text" id="s-name" value="' + escapeHtml(v.name) + '"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="s-swatches"></div></div>' +
     '<hr class="hr">' +
-    '<div class="field"><label>Types d&rsquo;intervention suivis pour ce vehicule</label>' + rows +
-    '<div class="add-type-row"><input type="text" id="newTypeName" placeholder="Nouveau type (ex : evacuation clim)"><button id="addTypeBtn">+ Ajouter</button></div>' +
+    '<div class="field"><label>Types d\'intervention suivis pour ce véhicule</label>' + rows +
+      '<div class="add-type-row">' +
+        '<input type="text" id="newTypeName" placeholder="Nouveau type (ex : Recharge Clim)">' +
+        '<button id="addTypeBtn">+ Ajouter</button>' +
+      '</div>' +
     '</div>' +
     '<div class="modal-actions" style="margin-top:16px;">' +
-    (canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce vehicule</button>' : '') +
-    '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
-    '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' +
+      (canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce véhicule</button>' : '') +
+      '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
+      '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' +
     '</div>';
 
   var swatchWrap = document.getElementById('s-swatches');
   PALETTE.forEach(function(c){
     var sw = document.createElement('div');
-    sw.className = 'swatch' + (c===v.color ? ' selected' : '');
+    sw.className = 'swatch' + (c === v.color ? ' selected' : '');
     sw.style.background = c;
     sw.setAttribute('data-color', c);
     sw.onclick = function(){
@@ -967,29 +806,36 @@ function openSettingsModal(){
   document.getElementById('modalOverlay').classList.add('open');
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
-  if(canDelete) document.getElementById('deleteVehicleBtn').onclick = function(){ deleteVehicle(activeVehicleId); };
+
+  if(canDelete){
+    document.getElementById('deleteVehicleBtn').onclick = function(){ deleteVehicle(activeVehicleId); };
+  }
 
   Array.prototype.forEach.call(modal.querySelectorAll('[data-deltype]'), function(btn){
     btn.onclick = function(){ deleteType(btn.getAttribute('data-deltype')); };
   });
 
-  document.getElementById('addTypeBtn').onclick = async function(){
+  document.getElementById('addTypeBtn').onclick = function(){
     var input = document.getElementById('newTypeName');
     var name = input.value.trim();
     if(!name){ alert('Merci de nommer le nouveau type.'); return; }
     var id = slugify(name);
     state.types.push({ id: id, label: name, km: null, months: null });
+    if(!v.enabledTypes) v.enabledTypes = [];
     v.enabledTypes.push(id);
+    if(!v.intervals) v.intervals = {};
     v.intervals[id] = { km: null, months: null };
-    logEvent(activeVehicleId, 'Type d\u2019intervention cree : ' + name);
-    await persist();
+
+    logEvent(activeVehicleId, 'Type d\'intervention créé : ' + name);
+    persist();
     openSettingsModal();
   };
 
-  document.getElementById('saveSettingsBtn').onclick = async function(){
+  document.getElementById('saveSettingsBtn').onclick = function(){
     var oldName = v.name, oldColor = v.color;
     var name = document.getElementById('s-name').value.trim();
     if(name) v.name = name;
+
     var selected = swatchWrap.querySelector('.swatch.selected');
     if(selected) v.color = selected.getAttribute('data-color');
 
@@ -999,58 +845,63 @@ function openSettingsModal(){
     });
     v.enabledTypes = newEnabled;
 
+    if(!v.intervals) v.intervals = {};
     Array.prototype.forEach.call(modal.querySelectorAll('.type-row input[type=number]'), function(inp){
       var t = inp.getAttribute('data-type');
       var field = inp.getAttribute('data-field');
-      var val = inp.value==='' ? null : parseInt(inp.value,10);
+      var val = inp.value === '' ? null : parseInt(inp.value, 10);
       if(!v.intervals[t]) v.intervals[t] = {};
       v.intervals[t][field] = val;
     });
 
-    if(name && name!==oldName) logEvent(activeVehicleId, 'Vehicule renomme : "'+oldName+'" -> "'+name+'"');
-    if(v.color!==oldColor) logEvent(activeVehicleId, 'Couleur du vehicule modifiee');
-    logEvent(activeVehicleId, 'Reglages des echeances mis a jour');
+    if(name && name !== oldName) logEvent(activeVehicleId, 'Véhicule renommé : "' + oldName + '" -> "' + name + '"');
+    if(v.color !== oldColor) logEvent(activeVehicleId, 'Couleur du véhicule modifiée');
+    logEvent(activeVehicleId, 'Réglages des échéances mis à jour');
 
-    await persist();
+    persist();
     closeModal();
     render();
   };
 }
 
-async function deleteType(typeId){
-  var t = state.types.filter(function(x){ return x.id===typeId; })[0];
+function deleteType(typeId){
+  var t = state.types.filter(function(x){ return x.id === typeId; })[0];
   if(!t) return;
-  if(!confirm('Supprimer le type "'+t.label+'" pour tous les vehicules ? Les interventions deja enregistrees restent visibles dans l\u2019historique.')) return;
-  state.types = state.types.filter(function(x){ return x.id!==typeId; });
+  if(!confirm('Supprimer le type "' + t.label + '" pour tous les véhicules ? Les interventions déjà enregistrées restent visibles dans l\'historique.')) return;
+
+  state.types = state.types.filter(function(x){ return x.id !== typeId; });
   state.order.forEach(function(id){
     var v = state.vehicles[id];
-    v.enabledTypes = v.enabledTypes.filter(function(x){ return x!==typeId; });
-    if(v.intervals[typeId]) delete v.intervals[typeId];
+    if(v){
+      if(v.enabledTypes) v.enabledTypes = v.enabledTypes.filter(function(x){ return x !== typeId; });
+      if(v.intervals && v.intervals[typeId]) delete v.intervals[typeId];
+    }
   });
-  logEvent(null, 'Type d\u2019intervention supprime (tous vehicules) : ' + t.label);
-  await persist();
+
+  logEvent(null, 'Type d\'intervention supprimé : ' + t.label);
+  persist();
   openSettingsModal();
   renderContent();
 }
 
-// ---- Modal: add vehicle ----
 function openAddVehicleModal(){
   var modal = document.getElementById('modal');
   var usedColor = PALETTE[state.order.length % PALETTE.length];
+
   modal.innerHTML =
-    '<h3>Ajouter un vehicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Ajouter un véhicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
     '<div class="field"><label>Nom</label><input type="text" id="nv-name" placeholder="Ex : Clio, Camping-car..."></div>' +
-    '<div class="field"><label>Kilometrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
+    '<div class="field"><label>Kilométrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="nv-swatches"></div></div>' +
     '<div class="modal-actions">' +
-    '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
-    '<button class="btn btn-primary" id="createVehicleBtn">Creer</button>' +
+      '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
+      '<button class="btn btn-primary" id="createVehicleBtn">Créer</button>' +
     '</div>';
 
   var swatchWrap = document.getElementById('nv-swatches');
   PALETTE.forEach(function(c){
     var sw = document.createElement('div');
-    sw.className = 'swatch' + (c===usedColor ? ' selected' : '');
+    sw.className = 'swatch' + (c === usedColor ? ' selected' : '');
     sw.style.background = c;
     sw.setAttribute('data-color', c);
     sw.onclick = function(){
@@ -1063,10 +914,12 @@ function openAddVehicleModal(){
   document.getElementById('modalOverlay').classList.add('open');
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
-  document.getElementById('createVehicleBtn').onclick = async function(){
+
+  document.getElementById('createVehicleBtn').onclick = function(){
     var name = document.getElementById('nv-name').value.trim();
-    if(!name){ alert('Merci de donner un nom au vehicule.'); return; }
-    var km = parseInt(document.getElementById('nv-km').value||'0',10);
+    if(!name){ alert('Merci de donner un nom au véhicule.'); return; }
+
+    var km = parseInt(document.getElementById('nv-km').value || '0', 10);
     var selected = swatchWrap.querySelector('.swatch.selected');
     var color = selected ? selected.getAttribute('data-color') : usedColor;
 
@@ -1074,65 +927,170 @@ function openAddVehicleModal(){
     var allIds = state.types.map(function(t){ return t.id; });
     var vehicle = makeVehicle(name, color, allIds);
     vehicle.mileage = isNaN(km) ? 0 : km;
+
     state.vehicles[id] = vehicle;
     state.entries[id] = [];
     state.order.push(id);
     activeVehicleId = id;
-    logEvent(id, 'Vehicule cree');
 
-    await persist();
+    logEvent(id, 'Véhicule créé');
+    persist();
     closeModal();
     render();
   };
 }
 
-async function deleteVehicle(id){
+function deleteVehicle(id){
   var v = state.vehicles[id];
-  if(!confirm('Supprimer "' + v.name + '" et tout son historique d’entretien ? Cette action est définitive.')) return;
+  if(!v) return;
+  if(!confirm('Supprimer "' + v.name + '" et tout son historique d\'entretien ? Cette action est définitive.')) return;
 
-  logEvent(id, 'Véhicule "' + v.name + '" supprimé (avec son historique)');
-  state.order = state.order.filter(function(x){ return x!==id; });
+  logEvent(id, 'Véhicule "' + v.name + '" supprimé');
+  state.order = state.order.filter(function(x){ return x !== id; });
   delete state.vehicles[id];
   delete state.entries[id];
   activeVehicleId = state.order[0] || null;
-  
-  await persist();
+
+  persist();
   closeModal();
   render();
 }
 
-// ---- Modal: journal ----
 function openJournalModal(){
   var modal = document.getElementById('modal');
-  var list = state.journal.slice().sort(function(a,b){ return new Date(b.ts)-new Date(a.ts); });
+  var list = (state.journal || []).slice().sort(function(a,b){ return new Date(b.ts) - new Date(a.ts); });
+
   var rows = list.map(function(j){
     var vehicle = state.vehicles[j.vehicleId];
     var color = vehicle ? vehicle.color : '#6B6E70';
-    var tag = j.vehicleName || 'General';
+    var tag = j.vehicleName || 'Général';
     return '<div class="journal-row">' +
-      '<div class="journal-meta"><span class="journal-tag" style="background:'+color+'">'+escapeHtml(tag)+'</span><span class="journal-time">'+fmtDateTime(j.ts)+'</span></div>' +
-      '<div class="journal-msg">'+escapeHtml(j.message)+'</div>' +
+      '<div class="journal-meta"><span class="journal-tag" style="background:' + color + '">' + escapeHtml(tag) + '</span><span class="journal-time">' + fmtDateTime(j.ts) + '</span></div>' +
+      '<div class="journal-msg">' + escapeHtml(j.message) + '</div>' +
       '</div>';
   }).join('');
+
   modal.innerHTML =
     '<h3>Journal des modifications <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
-    (list.length ? rows : '<div class="empty-state">Aucune modification enregistree pour le moment.</div>') +
+    (list.length ? rows : '<div class="empty-state">Aucune modification enregistrée pour le moment.</div>') +
     '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
+
   document.getElementById('modalOverlay').classList.add('open');
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
 }
 
-document.getElementById('emailLoginBtn').addEventListener('click', signInEmail);
-document.getElementById('accountBtn').addEventListener('click', function(){ if(currentUser && confirm('Se déconnecter ?')) signOutCloud(); });
-document.getElementById('addBtn').addEventListener('click', function(){ openEntryModal(null); });
-document.getElementById('journalBtn').addEventListener('click', openJournalModal);
-document.getElementById('modalOverlay').addEventListener('click', function(e){
-  if(e.target.id === 'modalOverlay') closeModal();
-});
+// Modale Export / Import / Sauvegarde
+function openExportModal(){
+  var modal = document.getElementById('modal');
+  var v = state.vehicles[activeVehicleId];
 
-initCloud();
-if(cloudReady){ sb.auth.onAuthStateChange(function(event,session){ if(session){ currentUser=session.user; loadState(); } else { document.getElementById('authOverlay').style.display='flex'; } }); loadState(); }
+  modal.innerHTML =
+    '<h3>Sauvegarde & Exportation <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+
+    '<div class="export-box">' +
+      '<h4>💾 Sauvegarde complète (Fichier JSON)</h4>' +
+      '<p>Téléchargez tout votre carnet de bord (véhicules, historiques, documents). Vous pourrez le restaurer sur n\'importe quel appareil.</p>' +
+      '<div class="row2">' +
+        '<button class="btn btn-primary" id="downloadBackupBtn">Télécharger la sauvegarde</button>' +
+        '<button class="btn btn-ghost" id="restoreBackupBtn">Restaurer un fichier</button>' +
+        '<input type="file" id="importJsonInput" style="display:none;" accept=".json">' +
+      '</div>' +
+    '</div>' +
+
+    (v ? 
+    '<div class="export-box">' +
+      '<h4>📊 Exporter ' + escapeHtml(v.name) + ' en CSV (Excel)</h4>' +
+      '<p>Téléchargez un tableau CSV contenant l\'historique complet des interventions pour ce véhicule.</p>' +
+      '<button class="btn btn-ghost" id="downloadCsvBtn" style="width:100%;">Télécharger l\'historique (.CSV)</button>' +
+    '</div>' : '') +
+
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  // Telecharger JSON
+  document.getElementById('downloadBackupBtn').onclick = function(){
+    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+    var dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    dlAnchor.setAttribute("download", "carnet_de_bord_backup_" + new Date().toISOString().substring(0,10) + ".json");
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    dlAnchor.remove();
+  };
+
+  // Restaurer JSON
+  var importInput = document.getElementById('importJsonInput');
+  document.getElementById('restoreBackupBtn').onclick = function(){ importInput.click(); };
+  importInput.onchange = function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt){
+      try {
+        var parsed = JSON.parse(evt.target.result);
+        if(parsed && parsed.vehicles && parsed.entries){
+          if(confirm('Restaurer cette sauvegarde ? Cela remplacera les données actuelles.')){
+            state = parsed;
+            persist();
+            closeModal();
+            loadState();
+            alert('Sauvegarde restaurée avec succès !');
+          }
+        } else {
+          alert('Format de fichier invalide.');
+        }
+      } catch(err) {
+        alert('Erreur lors de la lecture du fichier JSON.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Export CSV
+  var csvBtn = document.getElementById('downloadCsvBtn');
+  if(csvBtn && v){
+    csvBtn.onclick = function(){
+      var entries = state.entries[activeVehicleId] || [];
+      var csvRows = [["Date", "Kilometrage", "Type Intervention", "Notes/Observations"]];
+
+      entries.forEach(function(e){
+        var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
+        var label = typeObj ? typeObj.label : e.typeId;
+        var cleanNotes = (e.notes || '').replace(/"/g, '""');
+        csvRows.push(['"' + e.date + '"', '"' + e.km + '"', '"' + label + '"', '"' + cleanNotes + '"']);
+      });
+
+      var csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.map(function(r){ return r.join(";"); }).join("\n");
+      var dlAnchor = document.createElement('a');
+      dlAnchor.setAttribute("href", encodeURI(csvContent));
+      dlAnchor.setAttribute("download", "historique_" + slugify(v.name) + "_" + new Date().toISOString().substring(0,10) + ".csv");
+      document.body.appendChild(dlAnchor);
+      dlAnchor.click();
+      dlAnchor.remove();
+    };
+  }
+}
+
+// Initialisation & événements globaux
+document.getElementById('exportMenuBtn').onclick = openExportModal;
+document.getElementById('journalBtn').onclick = openJournalModal;
+document.getElementById('addBtn').onclick = function(){ openEntryModal(null); };
+
+var modalOverlay = document.getElementById('modalOverlay');
+if(modalOverlay){
+  modalOverlay.addEventListener('click', function(e){
+    if(e.target.id === 'modalOverlay') closeModal();
+  });
+}
+
+loadState();
+
 })();
 </script>
 </body>
