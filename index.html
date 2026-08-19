@@ -54,6 +54,7 @@
   .doc-remove{ position:absolute; top:-6px; right:-6px; width:18px;height:18px;border-radius:50%; background:var(--red); color:#fff; border:none; font-size:10px; line-height:18px; text-align:center; cursor:pointer; padding:0; }
   .doc-add-btn{ width:64px;height:64px;border-radius:8px; border:1px dashed var(--border); background:transparent; color:var(--text-muted); cursor:pointer; font-size:22px; display:flex;align-items:center;justify-content:center; flex:none; }
   .doc-add-btn:hover{ color:var(--yellow); border-color:var(--yellow); }
+  .doc-add-btn:disabled{ opacity:.5; cursor:default; }
 
   h2.section-title{ font-family:'Oswald',sans-serif; font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); margin:0 0 10px 2px; display:flex; justify-content:space-between; align-items:center; }
   section{ margin-bottom:26px; }
@@ -140,6 +141,12 @@
   .account-btn{font-size:11px!important;padding:7px 9px!important;width:auto!important}
   .sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--green);margin-right:6px}
 
+  .confirm-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:80; padding:20px; }
+  .confirm-overlay.open{ display:flex; }
+  .confirm-box{ background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--red); border-radius:14px; width:100%; max-width:400px; padding:20px; }
+  .confirm-box p{ font-size:14px; line-height:1.5; margin:0 0 18px; }
+  .field-hint{ font-size:12px; color:var(--yellow); margin-top:5px; }
+
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay { display: none !important; }
@@ -192,10 +199,27 @@
   <div class="modal" id="modal"></div>
 </div>
 
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <p id="confirmMsg"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="confirmCancelBtn">Annuler</button>
+      <button class="btn btn-danger" id="confirmOkBtn" style="flex:1;">Confirmer</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
-var SUPABASE_URL = "https://VOTRE_SUPABASE_URL.supabase.co"; 
-var SUPABASE_KEY = "VOTRE_SUPABASE_KEY";
+// Remplacez ces deux valeurs par celles de votre projet Supabase (Project Settings > API).
+// SUPABASE_KEY doit être la clé "anon public", jamais la clé "service_role".
+// IMPORTANT : sans règles RLS (Row Level Security) sur la table `user_data`, n'importe
+// quel détenteur de la clé anon peut lire/écrire les données de tous les utilisateurs.
+// Activez RLS puis ajoutez une policy du type :
+//   create policy "user_data_owner" on user_data
+//   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+var SUPABASE_URL = "https://VOTRE_SUPABASE_URL.supabase.co";
+var SUPABASE_KEY = "VOTRE_SUPABASE_ANON_KEY";
 
 var PALETTE = ['#F0B429', '#E12D39', '#2EC4B6', '#3A86FF', '#8338EC', '#FF006E', '#00F5D4', '#FF9F1C'];
 
@@ -235,6 +259,30 @@ function initCloud(){
   }
 }
 
+// ---- Confirmation stylée (remplace window.confirm) ----
+function showConfirm(message, okLabel){
+  return new Promise(function(resolve){
+    var overlay = document.getElementById('confirmOverlay');
+    var msgEl = document.getElementById('confirmMsg');
+    var okBtn = document.getElementById('confirmOkBtn');
+    var cancelBtn = document.getElementById('confirmCancelBtn');
+    if(!overlay || !msgEl || !okBtn || !cancelBtn){ resolve(window.confirm(message)); return; }
+
+    msgEl.textContent = message;
+    okBtn.textContent = okLabel || 'Confirmer';
+    overlay.classList.add('open');
+
+    function cleanup(result){
+      overlay.classList.remove('open');
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      resolve(result);
+    }
+    okBtn.onclick = function(){ cleanup(true); };
+    cancelBtn.onclick = function(){ cleanup(false); };
+  });
+}
+
 function escapeHtml(str){
   if(!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -242,6 +290,70 @@ function escapeHtml(str){
 
 function slugify(str){
   return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'custom-'+Date.now();
+}
+
+// ---- Gestion des fichiers joints (documents) ----
+var MAX_DOC_BYTES = 1.5 * 1024 * 1024; // 1.5 Mo après compression/lecture, pour rester raisonnable en localStorage/JSON
+
+// Redimensionne et compresse une image côté client (limite la taille du base64 stocké)
+function compressImage(file, maxDim, quality){
+  return new Promise(function(resolve, reject){
+    var img = new Image();
+    var reader = new FileReader();
+    reader.onload = function(evt){
+      img.onload = function(){
+        var w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w > h){ h = Math.round(h * (maxDim / w)); w = maxDim; }
+          else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality || 0.75));
+      };
+      img.onerror = function(){ reject(new Error('Image illisible')); };
+      img.src = evt.target.result;
+    };
+    reader.onerror = function(){ reject(new Error('Lecture du fichier impossible')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onload = function(evt){ resolve(evt.target.result); };
+    reader.onerror = function(){ reject(new Error('Lecture du fichier impossible')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Retourne une dataURL prête à stocker, en compressant les images trop lourdes.
+// Rejette (via alert) les fichiers non-image trop volumineux.
+async function prepareDocForStorage(file){
+  var isImage = file.type && file.type.indexOf('image/') === 0;
+
+  if(isImage){
+    // Compression systématique pour les images : limite la dimension et la taille finale
+    var dataUrl = await compressImage(file, 1600, 0.75);
+    if(dataUrl.length > MAX_DOC_BYTES){
+      dataUrl = await compressImage(file, 1000, 0.6);
+    }
+    if(dataUrl.length > MAX_DOC_BYTES){
+      alert('Cette image reste trop volumineuse même après compression. Merci d\'en choisir une autre.');
+      return null;
+    }
+    return dataUrl;
+  }
+
+  // Non-image (ex : PDF) : pas de compression possible, on applique juste une limite de taille
+  if(file.size > MAX_DOC_BYTES){
+    alert('Ce fichier dépasse la taille maximale autorisée (' + Math.round(MAX_DOC_BYTES/1024/1024*10)/10 + ' Mo). Merci de choisir un fichier plus léger.');
+    return null;
+  }
+  return readFileAsDataUrl(file);
 }
 
 function genId(prefix){
@@ -442,6 +554,16 @@ function getLatestEntry(vehicleId, typeId){
     return (b.km || 0) - (a.km || 0);
   });
   return filtered[0];
+}
+
+function getMaxEntryKm(vehicleId){
+  var list = state.entries[vehicleId] || [];
+  if(!list.length) return null;
+  var max = null;
+  list.forEach(function(e){
+    if(e.km != null && (max === null || e.km > max)) max = e.km;
+  });
+  return max;
 }
 
 function computeStatus(vehicleId, typeId){
@@ -673,12 +795,31 @@ function renderContent(){
   if(kmInput){
     kmInput.onchange = async function(){
       var val = parseInt(kmInput.value, 10);
-      if(!isNaN(val) && val !== v.mileage){
-        v.mileage = val;
-        logEvent(activeVehicleId, 'Kilométrage mis à jour : ' + fmtKm(val));
-        await persist();
-        renderContent();
+      if(isNaN(val)){ kmInput.value = v.mileage || 0; return; }
+
+      if(val < 0){
+        alert('Le kilométrage ne peut pas être négatif.');
+        kmInput.value = v.mileage || 0;
+        return;
       }
+
+      if(val === v.mileage) return;
+
+      // Cohérence : le kilométrage du véhicule ne devrait pas repasser sous une
+      // intervention déjà enregistrée (l'odomètre n'avance normalement que vers l'avant).
+      var maxEntryKm = getMaxEntryKm(activeVehicleId);
+      if(maxEntryKm !== null && val < maxEntryKm){
+        var ok = await showConfirm(
+          'Ce kilométrage (' + fmtKm(val) + ') est inférieur à une intervention déjà enregistrée (' + fmtKm(maxEntryKm) + '). Continuer quand même ?',
+          'Continuer'
+        );
+        if(!ok){ kmInput.value = v.mileage || 0; return; }
+      }
+
+      v.mileage = val;
+      logEvent(activeVehicleId, 'Kilométrage mis à jour : ' + fmtKm(val));
+      await persist();
+      renderContent();
     };
   }
 
@@ -689,18 +830,30 @@ function renderContent(){
   var docFileInput = document.getElementById('docFileInput');
   if(addDocBtn && docFileInput){
     addDocBtn.onclick = function(){ docFileInput.click(); };
-    docFileInput.onchange = function(e){
+    docFileInput.onchange = async function(e){
       var file = e.target.files[0];
+      docFileInput.value = ''; // permet de re-sélectionner le même fichier plus tard
       if(!file) return;
-      var reader = new FileReader();
-      reader.onload = async function(evt){
+
+      addDocBtn.disabled = true;
+      addDocBtn.textContent = '…';
+      try {
+        var dataUrl = await prepareDocForStorage(file);
+        if(!dataUrl) return; // message déjà affiché par prepareDocForStorage
+
         if(!v.documents) v.documents = [];
-        v.documents.push({ name: file.name, type: file.type, data: evt.target.result });
+        var storedType = (file.type && file.type.indexOf('image/') === 0) ? 'image/jpeg' : file.type;
+        v.documents.push({ name: file.name, type: storedType, data: dataUrl });
         logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
         await persist();
         renderContent();
-      };
-      reader.readAsDataURL(file);
+      } catch(err) {
+        console.error(err);
+        alert('Impossible d\'ajouter ce document.');
+      } finally {
+        addDocBtn.disabled = false;
+        addDocBtn.textContent = '+';
+      }
     };
   }
 
@@ -775,6 +928,7 @@ async function saveEntry(){
   var notes = document.getElementById('f-notes').value.trim();
 
   if(!date){ alert('Merci de renseigner une date.'); return; }
+  if(isNaN(km) || km < 0){ alert('Le kilométrage doit être un nombre positif.'); return; }
 
   var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
   var label = typeObj ? typeObj.label : typeId;
@@ -816,7 +970,8 @@ async function saveEntry(){
 }
 
 async function deleteEntry(id){
-  if(!confirm('Supprimer cette intervention ?')) return;
+  var ok = await showConfirm('Supprimer cette intervention ?', 'Supprimer');
+  if(!ok) return;
   var list = state.entries[activeVehicleId] || [];
   var entry = list.filter(function(e){ return e.id === id; })[0];
 
@@ -954,7 +1109,8 @@ function openSettingsModal(){
 async function deleteType(typeId){
   var t = state.types.filter(function(x){ return x.id === typeId; })[0];
   if(!t) return;
-  if(!confirm('Supprimer le type "' + t.label + '" pour tous les véhicules ? Les interventions déjà enregistrées restent visibles dans l\'historique.')) return;
+  var ok = await showConfirm('Supprimer le type "' + t.label + '" pour tous les véhicules ? Les interventions déjà enregistrées restent visibles dans l\'historique.', 'Supprimer');
+  if(!ok) return;
 
   state.types = state.types.filter(function(x){ return x.id !== typeId; });
   state.order.forEach(function(id){
@@ -1031,7 +1187,8 @@ function openAddVehicleModal(){
 async function deleteVehicle(id){
   var v = state.vehicles[id];
   if(!v) return;
-  if(!confirm('Supprimer "' + v.name + '" et tout son historique d\'entretien ? Cette action est définitive.')) return;
+  var ok = await showConfirm('Supprimer "' + v.name + '" et tout son historique d\'entretien ? Cette action est définitive.', 'Supprimer');
+  if(!ok) return;
 
   logEvent(id, 'Véhicule "' + v.name + '" supprimé');
   state.order = state.order.filter(function(x){ return x !== id; });
@@ -1074,7 +1231,11 @@ var emailBtn = document.getElementById('emailLoginBtn');
 if(emailBtn) emailBtn.addEventListener('click', signInEmail);
 
 var accountBtn = document.getElementById('accountBtn');
-if(accountBtn) accountBtn.addEventListener('click', function(){ if(currentUser && confirm('Se déconnecter ?')) signOutCloud(); });
+if(accountBtn) accountBtn.addEventListener('click', async function(){
+  if(!currentUser) return;
+  var ok = await showConfirm('Se déconnecter ?', 'Se déconnecter');
+  if(ok) signOutCloud();
+});
 
 var addBtn = document.getElementById('addBtn');
 if(addBtn) addBtn.addEventListener('click', function(){ openEntryModal(null); });
