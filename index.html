@@ -445,12 +445,12 @@ async function processFile(file){
 function renderDocChips(docs){
   if(!docs || !docs.length) return '';
   return docs.map(function(d){
-    var thumbHtml = d.thumb ? '<img src="'+d.thumb+'" alt="">' : fileIconSvg();
-    return '<div class="doc-chip">' +
-      '<div class="doc-thumb" data-doc-open="'+d.id+'">'+thumbHtml+'</div>' +
-      '<div class="doc-name">'+escapeHtml(d.name)+'</div>' +
-      '<button class="doc-remove" data-doc-remove="'+d.id+'">\u2715</button>' +
-      '</div>';
+    var imgSrc = d.url || d.thumb || d.dataUrl || '';
+    return '<div class="doc-chip" data-doc-open="'+d.id+'">' +
+      (imgSrc ? '<img src="'+imgSrc+'" class="doc-chip-thumb" alt="">' : '📄 ') +
+      '<span class="doc-chip-name">'+escapeHtml(d.name)+'</span>' +
+      '<button class="doc-chip-del" data-doc-remove="'+d.id+'" title="Supprimer">\u2715</button>' +
+    '</div>';
   }).join('');
 }
 async function openDocument(docOrId) {
@@ -534,22 +534,24 @@ async function deleteVehicleDocument(docId){
   renderContent();
 }
 async function addEntryDocuments(entry, fileList) {
+  if (!entry) return;
   if (!entry.documents) entry.documents = [];
 
   for (var i = 0; i < fileList.length; i++) {
     try {
+      // 1. Upload sur Supabase Storage
       var processed = await processFile(fileList[i]);
       var id = genId('doc');
 
-      // On enregistre directement l'URL cloud Supabase dans l'objet du document
+      // 2. Ajout du document dans le tableau local
       entry.documents.push({
         id: id,
         name: processed.name,
         mime: processed.mime,
-        url: processed.dataUrl, // <-- URL Cloud Supabase
-        thumb: processed.thumb, // <-- Miniature / URL Cloud Supabase
+        url: processed.dataUrl, // URL publique Supabase Storage
+        thumb: processed.thumb,
         size: processed.size,
-        addedAt: new Date().toISOString(),
+        addedAt: new Date().toISOString()
       });
 
       logEvent(
@@ -564,11 +566,12 @@ async function addEntryDocuments(entry, fileList) {
     }
   }
 
-  // Sauvegarde globale sur le Cloud Supabase
+  // 3. FORCE la sauvegarde sur Supabase Cloud
   await persist();
+
+  // 4. Mettre à jour la fenêtre modale sans fermer
   openEntryModal(entry);
 }
-
 async function deleteEntryDocument(entry, docId){
   var doc = entry.documents.filter(function(d){ return d.id===docId; })[0];
   if(!doc) return;
