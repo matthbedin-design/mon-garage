@@ -631,6 +631,38 @@ function renderTabs(){
   tabs.appendChild(addTab);
 }
 
+function getVehicleStats(vehicleId) {
+  var entries = state.entries[vehicleId] || [];
+  if (!entries.length) return null;
+
+  var totalCost = 0;
+  var minKm = Infinity, maxKm = -Infinity;
+  var costsByType = {};
+
+  entries.forEach(function(e) {
+    if (e.cost) {
+      var costNum = Number(e.cost);
+      totalCost += costNum;
+      var typeName = e.typeLabelSnapshot || typeLabel(e.typeId);
+      costsByType[typeName] = (costsByType[typeName] || 0) + costNum;
+    }
+    if (e.km) {
+      if (e.km < minKm) minKm = e.km;
+      if (e.km > maxKm) maxKm = e.km;
+    }
+  });
+
+  var kmDriven = (maxKm > minKm && minKm !== Infinity) ? (maxKm - minKm) : 0;
+  var costPerKm = kmDriven > 0 ? (totalCost / kmDriven).toFixed(2) : '0.00';
+
+  return {
+    totalCost: totalCost,
+    kmDriven: kmDriven,
+    costPerKm: costPerKm,
+    costsByType: costsByType
+  };
+}
+
 function renderContent(){
   var content = document.getElementById('content');
   var v = state.vehicles[activeVehicleId];
@@ -675,6 +707,28 @@ function renderContent(){
     html += '</div>';
   });
   if(!anyGauge) html += '<div class="empty-state">Aucune echeance suivie. Activez un type dans les reglages ou ajoutez une intervention.</div>';
+  html += '</section>';
+
+var stats = getVehicleStats(activeVehicleId);
+  html += '<section><h2 class="section-title">Analyse Financière</h2>';
+  if (!stats || stats.totalCost === 0) {
+    html += '<div class="empty-state">Renseignez le coût de vos interventions dans l’historique pour voir les statistiques.</div>';
+  } else {
+    html += '<div class="gauge-card" style="display:flex; justify-content:space-around; text-align:center; padding:16px 8px;">';
+    html += '  <div>';
+    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Coût Total</div>';
+    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--yellow); margin-top:4px;">' + stats.totalCost.toLocaleString('fr-FR') + ' €</div>';
+    html += '  </div>';
+    html += '  <div style="border-left:1px solid var(--border); border-right:1px solid var(--border); padding:0 12px;">';
+    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Distance suivie</div>';
+    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--text); margin-top:4px;">' + stats.kmDriven.toLocaleString('fr-FR') + ' km</div>';
+    html += '  </div>';
+    html += '  <div>';
+    html += '    <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Coût / km</div>';
+    html += '    <div style="font-family:\'JetBrains Mono\',monospace; font-size:18px; font-weight:700; color:var(--green); margin-top:4px;">' + stats.costPerKm + ' €</div>';
+    html += '  </div>';
+    html += '</div>';
+  }
   html += '</section>';
 
   html += '<section><h2 class="section-title">Historique</h2>';
