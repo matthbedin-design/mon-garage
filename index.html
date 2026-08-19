@@ -509,30 +509,51 @@ async function openDocument(docOrId) {
 }
 
 async function addVehicleDocuments(fileList){
+  if (!activeVehicleId) return;
   var v = state.vehicles[activeVehicleId];
-  for(var i=0;i<fileList.length;i++){
+  if (!v) return;
+  if (!v.documents) v.documents = [];
+
+  for(var i=0; i<fileList.length; i++){
     try{
       var processed = await processFile(fileList[i]);
       var id = genId('doc');
-      localStorage.setItem('doc:'+id, processed.dataUrl);
-      v.documents.push({ id:id, name:processed.name, mime:processed.mime, thumb:processed.thumb, size:processed.size, addedAt:new Date().toISOString() });
-      logEvent(activeVehicleId, 'Document ajoute au vehicule : ' + processed.name);
-    }catch(err){ alert(err.message || 'Erreur lors de l\u2019ajout du fichier.'); }
+      
+      v.documents.push({ 
+        id: id, 
+        name: processed.name, 
+        mime: processed.mime, 
+        url: processed.dataUrl, 
+        thumb: processed.thumb, 
+        size: processed.size, 
+        addedAt: new Date().toISOString() 
+      });
+      
+      logEvent(activeVehicleId, 'Document ajouté au véhicule : ' + processed.name);
+    } catch(err){ 
+      alert(err.message || 'Erreur lors de l’ajout du fichier.'); 
+    }
   }
+
   await persist();
   renderContent();
 }
+
 async function deleteVehicleDocument(docId){
   var v = state.vehicles[activeVehicleId];
+  if(!v || !v.documents) return;
+  
   var doc = v.documents.filter(function(d){ return d.id===docId; })[0];
   if(!doc) return;
-  if(!confirm('Supprimer "'+doc.name+'" ?')) return;
+  if(!confirm('Supprimer "' + doc.name + '" ?')) return;
+
   v.documents = v.documents.filter(function(d){ return d.id!==docId; });
-  try{ localStorage.removeItem('doc:'+docId); }catch(e){}
-  logEvent(activeVehicleId, 'Document supprime du vehicule : ' + doc.name);
+  
+  logEvent(activeVehicleId, 'Document supprimé du véhicule : ' + doc.name);
   await persist();
   renderContent();
 }
+
 async function addEntryDocuments(entry, fileList) {
   if (!entry) return;
   if (!entry.documents) entry.documents = [];
@@ -554,8 +575,7 @@ async function addEntryDocuments(entry, fileList) {
         addedAt: new Date().toISOString()
       });
 
-      logEvent(
-        activeVehicleId,
+      logEvent(activeVehicleId,
         'Document ajoute a l\u2019intervention "' +
           (entry.typeLabelSnapshot || typeLabel(entry.typeId)) +
           '" : ' +
@@ -581,8 +601,7 @@ async function deleteEntryDocument(entry, docId){
   entry.documents = entry.documents.filter(function(d){ return d.id!==docId; });
 
   // 2. Nettoyage de secours sur l'ancien système local
-  try{ localStorage.removeItem('doc:'+docId); }catch(e){}
-
+  
   logEvent(activeVehicleId, 'Document supprime de l\u2019intervention "' + (entry.typeLabelSnapshot||typeLabel(entry.typeId)) + '" : ' + doc.name);
 
   // 3. Sauvegarde de la suppression sur le Cloud Supabase
@@ -1015,21 +1034,14 @@ function openAddVehicleModal(){
 
 async function deleteVehicle(id){
   var v = state.vehicles[id];
-  if(!confirm('Supprimer "'+v.name+'" et tout son historique d\u2019entretien ? Cette action est definitive.')) return;
+  if(!confirm('Supprimer "' + v.name + '" et tout son historique d’entretien ? Cette action est définitive.')) return;
 
-  var docs = v.documents || [];
-  for(var i=0;i<docs.length;i++){ try{ localStorage.removeItem('doc:'+docs[i].id); }catch(e){} }
-  var entryList = state.entries[id] || [];
-  for(var j=0;j<entryList.length;j++){
-    var ed = entryList[j].documents || [];
-    for(var k=0;k<ed.length;k++){ try{ localStorage.removeItem('doc:'+ed[k].id); }catch(e){} }
-  }
-
-  logEvent(id, 'Vehicule "'+v.name+'" supprime (avec son historique)');
+  logEvent(id, 'Véhicule "' + v.name + '" supprimé (avec son historique)');
   state.order = state.order.filter(function(x){ return x!==id; });
   delete state.vehicles[id];
   delete state.entries[id];
   activeVehicleId = state.order[0] || null;
+  
   await persist();
   closeModal();
   render();
@@ -1058,7 +1070,7 @@ function openJournalModal(){
 }
 
 document.getElementById('emailLoginBtn').addEventListener('click', signInEmail);
-document.getElementById('accountBtn').addEventListener('click', function(){ if(currentUser && confirm('Se déconnecter de Google ?')) signOutCloud(); });
+document.getElementById('accountBtn').addEventListener('click', function(){ if(currentUser && confirm('Se déconnecter ?')) signOutCloud(); });
 document.getElementById('addBtn').addEventListener('click', function(){ openEntryModal(null); });
 document.getElementById('journalBtn').addEventListener('click', openJournalModal);
 document.getElementById('modalOverlay').addEventListener('click', function(e){
