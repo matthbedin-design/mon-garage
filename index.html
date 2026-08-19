@@ -6,23 +6,20 @@
 <title>Carnet de bord — Entretien véhicules</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#1B1D1E; --surface:#242628; --surface-2:#2B2E30; --border:#35383A;
     --text:#ECECE8; --text-muted:#9B9E9F; --yellow:#F0B429; --red:#D9534F; --green:#5FAE7D;
-    --accent: var(--yellow);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; -webkit-font-smoothing:antialiased; }
   .app{ max-width:720px; margin:0 auto; padding:20px 16px 80px; }
-  header.topbar{ display:flex; align-items:center; gap:12px; padding:4px 2px 18px; flex-wrap:wrap; }
+  header.topbar{ display:flex; align-items:center; gap:12px; padding:4px 2px 18px; }
   .brand-mark{ width:38px;height:38px;flex:none; display:flex;align-items:center;justify-content:center; border:2px solid var(--yellow); border-radius:50%; color:var(--yellow); }
-  .brand-text{ flex:1; min-width:180px; }
   .brand-text h1{ font-family:'Oswald',sans-serif; font-weight:600; letter-spacing:0.06em; font-size:20px; margin:0; text-transform:uppercase; }
   .brand-text p{ margin:2px 0 0; font-size:12.5px; color:var(--text-muted); }
-  .top-actions{ display:flex; gap:6px; }
-
   nav.tabs{ display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; }
   .tab-btn{
     font-family:'Oswald',sans-serif; background:none; border:none; color:var(--text-muted);
@@ -30,21 +27,20 @@
     cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap; transition:color .15s ease;
   }
   .tab-btn.active{ color:var(--text); }
+  .tab-btn:hover{ color:var(--text); }
   .tab-add{ font-family:'Oswald',sans-serif; background:none; border:none; color:var(--text-muted); font-size:18px; padding:8px 12px 12px; cursor:pointer; flex:none; }
   .tab-add:hover{ color:var(--yellow); }
 
-  .vehicle-header{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; margin-bottom:22px; position:relative; border-top:3px solid var(--accent); }
+  .vehicle-header{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; margin-bottom:22px; position:relative; border-top:3px solid var(--accent, var(--yellow)); }
   .vehicle-header .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
   .vehicle-name{ font-family:'Oswald',sans-serif; font-size:22px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; margin:0; }
   .vehicle-plate-input{ background:transparent; border:none; border-bottom:1px dashed var(--border); color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:13px; padding:2px 0; margin-top:4px; width:150px; }
   .vehicle-plate-input:focus{ outline:none; border-color:var(--accent); color:var(--text); }
-  
-  .header-btns{ display:flex; gap:6px; }
-  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); padding:6px 10px; border-radius:8px; display:inline-flex;align-items:center;justify-content:center; gap:6px; cursor:pointer; flex:none; font-size:12px; font-weight:500; }
+  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); width:34px;height:34px; border-radius:8px; display:flex;align-items:center;justify-content:center; cursor:pointer; flex:none; }
   .icon-btn:hover{ color:var(--text); border-color:var(--accent); }
 
   .mileage-row{ display:flex; align-items:baseline; gap:8px; margin-top:14px; }
-  .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; border-radius:8px; padding:4px 10px; width:160px; }
+  .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; border-radius:8px; padding:4px 10px; width:150px; }
   .mileage-input:focus{ outline:none; border-color:var(--accent); }
   .mileage-unit{ font-family:'JetBrains Mono',monospace; color:var(--text-muted); font-size:13px; }
 
@@ -81,11 +77,11 @@
   .history-meta .km{ color:var(--text); font-size:13px; }
   .empty-state{ text-align:center; padding:30px 10px; color:var(--text-muted); font-size:13.5px; border:1px dashed var(--border); border-radius:12px; }
 
-  .fab{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); max-width:688px; width:calc(100% - 32px); display:flex; justify-content:flex-end; pointer-events:none; z-index:10; }
+  .fab{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); max-width:688px; width:calc(100% - 32px); display:flex; justify-content:flex-end; pointer-events:none; }
   .add-btn{ pointer-events:auto; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; background:var(--yellow); color:#1B1D1E; border:none; font-size:14px; font-weight:600; padding:13px 20px; border-radius:30px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.4); }
   .add-btn:hover{ filter:brightness(1.08); }
 
-  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.65); display:none; align-items:flex-end; justify-content:center; z-index:50; }
+  .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; justify-content:center; z-index:50; }
   .modal-overlay.open{ display:flex; }
   .modal{ background:var(--surface); border:1px solid var(--border); border-radius:16px 16px 0 0; width:100%; max-width:520px; max-height:88vh; overflow-y:auto; padding:20px 20px 24px; }
   @media (min-width:600px){ .modal-overlay{ align-items:center; } .modal{ border-radius:16px; } }
@@ -98,8 +94,8 @@
   .field textarea{ resize:vertical; min-height:60px; }
   .row2{ display:flex; gap:10px; }
   .row2 .field{ flex:1; }
-  .modal-actions{ display:flex; gap:10px; margin-top:12px; }
-  .btn{ flex:1; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; font-size:13.5px; font-weight:600; padding:12px; border-radius:9px; border:1px solid var(--border); cursor:pointer; background:transparent; color:var(--text); text-align:center; text-decoration:none; }
+  .modal-actions{ display:flex; gap:10px; margin-top:6px; }
+  .btn{ flex:1; font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em; font-size:13.5px; font-weight:600; padding:12px; border-radius:9px; border:1px solid var(--border); cursor:pointer; background:transparent; color:var(--text); }
   .btn-primary{ background:var(--yellow); color:#1B1D1E; border:none; }
   .btn-primary:hover{ filter:brightness(1.08); }
   .btn-ghost{ background:transparent; color:var(--text-muted); }
@@ -135,34 +131,50 @@
   .hr{ border:none; border-top:1px solid var(--border); margin:18px 0; }
   .loading{ text-align:center; padding:60px 10px; color:var(--text-muted); font-size:13.5px; }
 
-  .export-box{ background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:12px; }
-  .export-box h4{ margin:0 0 6px; font-size:14px; font-family:'Oswald',sans-serif; text-transform:uppercase; color:var(--yellow); }
-  .export-box p{ margin:0 0 10px; font-size:12px; color:var(--text-muted); line-height:1.4; }
+  .auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+  .auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--yellow);border-radius:16px;padding:26px}
+  .auth-card h2{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px}
+  .auth-card p{color:var(--text-muted);font-size:13px;line-height:1.5;margin:0 0 20px}
+  .auth-btn{width:100%;padding:13px;border-radius:9px;border:1px solid var(--border);background:var(--yellow);color:#1B1D1E;font-family:'Oswald',sans-serif;font-weight:600;text-transform:uppercase;cursor:pointer}
+  .auth-status{font-size:12px;color:var(--text-muted);margin-top:12px;text-align:center;min-height:18px}
+  .account-btn{font-size:11px!important;padding:7px 9px!important;width:auto!important}
+  .sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--green);margin-right:6px}
 
   @media print {
     body { background: #fff !important; color: #000 !important; }
-    .topbar, .tabs, .fab, .icon-btn, .doc-add-btn, .doc-remove, #addBtn, .modal-overlay, .header-btns { display: none !important; }
+    .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay { display: none !important; }
     .app { max-width: 100% !important; padding: 0 !important; }
-    .vehicle-header, .gauge-card, .history-row { border: 1px solid #ccc !important; background: #fff !important; color: #000 !important; page-break-inside: avoid; box-shadow: none !important; }
+    .vehicle-header, .gauge-card, .history-row { border: 1px solid #ccc !important; background: #fff !important; color: #000 !important; page-break-inside: avoid; }
     .vehicle-name, .history-type, .km { color: #000 !important; }
-    .mileage-input, .vehicle-plate-input { border: none !important; background: transparent !important; color: #000 !important; padding: 0 !important; }
+    .mileage-input, .vehicle-plate-input { border: none !important; background: transparent !important; color: #000 !important; }
     .section-title { color: #333 !important; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
   }
 </style>
 </head>
 <body>
 
+<div id="authOverlay" class="auth-overlay" style="display:none;">
+  <div class="auth-card">
+    <h2>Carnet de Bord</h2>
+    <p>Connectez-vous pour accéder à vos données de suivi d'entretien.</p>
+    <div class="field">
+      <label>Adresse e-mail</label>
+      <input type="email" id="emailInput" placeholder="votre@email.com">
+    </div>
+    <button class="auth-btn" id="emailLoginBtn">Se connecter</button>
+    <div class="auth-status" id="authStatus"></div>
+  </div>
+</div>
+
 <div class="app">
   <header class="topbar">
     <div class="brand-mark">🔧</div>
-    <div class="brand-text">
+    <div class="brand-text" style="flex:1;">
       <h1>Carnet de Bord</h1>
       <p>Suivi d'entretien véhicule</p>
     </div>
-    <div class="top-actions">
-      <button class="icon-btn" id="exportMenuBtn" title="Sauvegarder & Exporter">💾 Export / Save</button>
-      <button class="icon-btn" id="journalBtn" title="Journal d'activités">📋</button>
-    </div>
+    <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités">📋</button>
+    <button class="icon-btn account-btn" id="accountBtn" title="Compte"><span class="sync-dot"></span>Compte</button>
   </header>
 
   <nav class="tabs" id="tabsNav"></nav>
@@ -182,6 +194,9 @@
 
 <script>
 (function(){
+var SUPABASE_URL = "https://VOTRE_SUPABASE_URL.supabase.co"; 
+var SUPABASE_KEY = "VOTRE_SUPABASE_KEY";
+
 var PALETTE = ['#F0B429', '#E12D39', '#2EC4B6', '#3A86FF', '#8338EC', '#FF006E', '#00F5D4', '#FF9F1C'];
 
 var DEFAULT_TYPES = [
@@ -194,6 +209,10 @@ var DEFAULT_TYPES = [
   { id: 'ct', label: 'Contrôle Technique', km: null, months: 24 }
 ];
 
+var sb = null;
+var cloudReady = false;
+var currentUser = null;
+
 var state = {
   vehicles: {},
   entries: {},
@@ -204,6 +223,17 @@ var state = {
 
 var activeVehicleId = null;
 var editingEntryId = null;
+
+function initCloud(){
+  if(window.supabase && SUPABASE_URL.indexOf('VOTRE_SUPABASE') === -1){
+    try {
+      sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      cloudReady = true;
+    } catch(e) {
+      console.error("Erreur d'initialisation Supabase", e);
+    }
+  }
+}
 
 function escapeHtml(str){
   if(!str) return '';
@@ -242,13 +272,13 @@ function iconSvg(){
 }
 
 function gearSvg(){
-  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+  return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
 }
 
 function trashSvg(){
   return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
 }
-
+// ---- Modèle & Helpers ----
 function makeVehicle(name, color, enabledTypes){
   return {
     name: name,
@@ -275,35 +305,64 @@ function logEvent(vehicleId, message){
   });
 }
 
-// Persistance Locale Garantie
-function persist(){
-  try {
-    localStorage.setItem('cb_data', JSON.stringify(state));
-  } catch(e) {
-    console.error('Erreur de sauvegarde locale :', e);
+// ---- Persistance & Auth Cloud ----
+async function persist(){
+  if(cloudReady && currentUser){
+    try {
+      var payload = {
+        user_id: currentUser.id,
+        state: state,
+        updated_at: new Date().toISOString()
+      };
+      var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
+      if(res.error) console.error('Erreur sauvegarde cloud:', res.error);
+    } catch(e) {
+      console.error('Exception sauvegarde cloud:', e);
+    }
+  } else {
+    try {
+      localStorage.setItem('cb_data', JSON.stringify(state));
+    } catch(e) {
+      console.error('Erreur localStorage:', e);
+    }
   }
 }
 
-function loadState(){
-  try {
-    var raw = localStorage.getItem('cb_data');
-    if(raw){
-      state = JSON.parse(raw);
-    } else {
+async function loadState(){
+  if(cloudReady && currentUser){
+    try {
+      var res = await sb.from('user_data').select('state').eq('user_id', currentUser.id).single();
+      if(res.data && res.data.state){
+        state = res.data.state;
+      } else {
+        initDefaultState();
+        await persist();
+      }
+    } catch(e) {
+      console.error('Erreur chargement cloud:', e);
       initDefaultState();
     }
-  } catch(e) {
-    console.error('Erreur de chargement :', e);
-    initDefaultState();
+  } else {
+    try {
+      var raw = localStorage.getItem('cb_data');
+      if(raw){
+        state = JSON.parse(raw);
+      } else {
+        initDefaultState();
+      }
+    } catch(e) {
+      initDefaultState();
+    }
   }
 
+  // Sanity check
   if(!state.types || !state.types.length) state.types = DEFAULT_TYPES.slice();
   if(!state.journal) state.journal = [];
   if(!state.order) state.order = [];
   if(!state.vehicles) state.vehicles = {};
   if(!state.entries) state.entries = {};
 
-  if(state.order.length > 0 && (!activeVehicleId || !state.vehicles[activeVehicleId])){
+  if(state.order.length > 0 && !activeVehicleId){
     activeVehicleId = state.order[0];
   }
 
@@ -312,28 +371,56 @@ function loadState(){
 
 function initDefaultState(){
   var v1 = genId('v');
+  var v2 = genId('v');
   var allTypes = DEFAULT_TYPES.map(function(t){ return t.id; });
 
   state = {
     vehicles: {},
     entries: {},
-    order: [v1],
+    order: [v1, v2],
     types: DEFAULT_TYPES.slice(),
     journal: []
   };
 
-  state.vehicles[v1] = makeVehicle('Mon Véhicule', PALETTE[0], allTypes);
-  state.vehicles[v1].mileage = 100000;
-  state.vehicles[v1].plate = 'AA-123-BB';
+  state.vehicles[v1] = makeVehicle('Clio 4', PALETTE[0], allTypes);
+  state.vehicles[v1].mileage = 112500;
+  state.vehicles[v1].plate = 'AB-123-CD';
+
+  state.vehicles[v2] = makeVehicle('Camping-car', PALETTE[3], allTypes);
+  state.vehicles[v2].mileage = 84000;
+  state.vehicles[v2].plate = 'EF-456-GH';
 
   state.entries[v1] = [
-    { id: genId('e'), typeId: 'vidange', date: new Date().toISOString().substring(0, 10), km: 100000, notes: 'Première vidange enregistrée', documents: [] }
+    { id: genId('e'), typeId: 'vidange', date: '2025-05-10', km: 105000, notes: 'Filtre changé', documents: [] }
   ];
+  state.entries[v2] = [];
 
-  logEvent(v1, 'Carnet d\'entretien initialisé');
-  persist();
+  logEvent(v1, 'Véhicule créé');
+  logEvent(v2, 'Véhicule créé');
 }
 
+async function signInEmail(){
+  var email = document.getElementById('emailInput').value.trim();
+  var statusEl = document.getElementById('authStatus');
+  if(!email){ if(statusEl) statusEl.innerText = 'Merci de saisir un e-mail.'; return; }
+  
+  if(statusEl) statusEl.innerText = 'Envoi du lien...';
+  var res = await sb.auth.signInWithOtp({ email: email });
+  if(res.error){
+    if(statusEl) statusEl.innerText = 'Erreur : ' + res.error.message;
+  } else {
+    if(statusEl) statusEl.innerText = 'Lien magique envoyé ! Vérifiez vos e-mails.';
+  }
+}
+
+async function signOutCloud(){
+  if(sb) await sb.auth.signOut();
+  currentUser = null;
+  var authEl = document.getElementById('authOverlay');
+  if(authEl) authEl.style.display = 'flex';
+}
+
+// ---- Calculs des échéances ----
 function getTypeConfig(vehicle, typeId){
   var globalType = state.types.filter(function(t){ return t.id === typeId; })[0];
   if(!globalType) return null;
@@ -408,7 +495,7 @@ function computeStatus(vehicleId, typeId){
   result.pct = Math.max(pctKm, pctDays);
   return result;
 }
-
+// ---- Rendu UI ----
 function render(){
   renderTabs();
   renderContent();
@@ -422,7 +509,7 @@ function renderTabs(){
     var v = state.vehicles[id];
     if(!v) return '';
     var activeClass = (id === activeVehicleId) ? ' active' : '';
-    var style = (id === activeVehicleId) ? 'border-bottom-color:' + (v.color || 'var(--yellow)') + '; color:' + (v.color || 'var(--yellow)') + ';' : '';
+    var style = (id === activeVehicleId) ? 'border-bottom-color:' + v.color + '; color:' + v.color + ';' : '';
     return '<button class="tab-btn' + activeClass + '" style="' + style + '" data-id="' + id + '">' + escapeHtml(v.name) + '</button>';
   }).join('');
 
@@ -450,28 +537,28 @@ function renderContent(){
     return;
   }
 
+  // Appliquer la couleur d'accent au véhicule
   document.documentElement.style.setProperty('--accent', v.color || 'var(--yellow)');
-  var entries = state.entries[activeVehicleId] || [];
 
+  var entries = state.entries[activeVehicleId] || [];
+  
+  // Entête du véhicule
   var html = '<div class="vehicle-header" style="--accent:' + (v.color || 'var(--yellow)') + '">';
   html += '<div class="row1">';
   html += '<div>';
   html += '<h1 class="vehicle-name">' + escapeHtml(v.name) + '</h1>';
   html += '<input type="text" class="vehicle-plate-input" id="v-plate" value="' + escapeHtml(v.plate || '') + '" placeholder="Immatriculation (ex: AA-123-BB)">';
   html += '</div>';
-  
-  html += '<div class="header-btns">';
-  html += '<button class="icon-btn" onclick="window.print()" title="Imprimer ou Sauvegarder en PDF">🖨️ Imprimer / PDF</button>';
-  html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule">' + gearSvg() + ' Réglages</button>';
+  html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule">' + gearSvg() + '</button>';
   html += '</div>';
 
-  html += '</div>';
-
+  // Kilométrage
   html += '<div class="mileage-row">';
   html += '<input type="number" class="mileage-input" id="v-km" value="' + (v.mileage || 0) + '">';
   html += '<span class="mileage-unit">km parcourus</span>';
   html += '</div>';
 
+  // Documents attachés au véhicule
   html += '<div class="doc-section">';
   html += '<div class="doc-section-label">Documents (carte grise, assurance...)</div>';
   html += '<div class="doc-chip-row">';
@@ -491,9 +578,9 @@ function renderContent(){
   html += '<button class="doc-add-btn" id="addDocBtn" title="Ajouter un document">+</button>';
   html += '<input type="file" id="docFileInput" style="display:none;" accept="image/*,application/pdf">';
   html += '</div></div>';
-  html += '</div>';
+  html += '</div>'; // Fin vehicle-header
 
-  // Section : Échéances
+  // Section 1 : Échéances à venir
   html += '<section>';
   html += '<h2 class="section-title">Échéances d\'entretien</h2>';
   
@@ -536,7 +623,7 @@ function renderContent(){
   }
   html += '</section>';
 
-  // Section : Historique
+  // Section 2 : Historique
   html += '<section>';
   html += '<h2 class="section-title">Historique complet (' + entries.length + ')</h2>';
   
@@ -572,24 +659,24 @@ function renderContent(){
 
   content.innerHTML = html;
 
-  // Bindings
+  // Binding des événements dynamiques de la vue
   var plateInput = document.getElementById('v-plate');
   if(plateInput){
-    plateInput.onchange = function(){
+    plateInput.onchange = async function(){
       v.plate = plateInput.value.trim();
       logEvent(activeVehicleId, 'Immatriculation mise à jour');
-      persist();
+      await persist();
     };
   }
 
   var kmInput = document.getElementById('v-km');
   if(kmInput){
-    kmInput.onchange = function(){
+    kmInput.onchange = async function(){
       var val = parseInt(kmInput.value, 10);
       if(!isNaN(val) && val !== v.mileage){
         v.mileage = val;
         logEvent(activeVehicleId, 'Kilométrage mis à jour : ' + fmtKm(val));
-        persist();
+        await persist();
         renderContent();
       }
     };
@@ -606,11 +693,11 @@ function renderContent(){
       var file = e.target.files[0];
       if(!file) return;
       var reader = new FileReader();
-      reader.onload = function(evt){
+      reader.onload = async function(evt){
         if(!v.documents) v.documents = [];
         v.documents.push({ name: file.name, type: file.type, data: evt.target.result });
         logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
-        persist();
+        await persist();
         renderContent();
       };
       reader.readAsDataURL(file);
@@ -618,13 +705,13 @@ function renderContent(){
   }
 
   Array.prototype.forEach.call(content.querySelectorAll('.doc-remove'), function(btn){
-    btn.onclick = function(e){
+    btn.onclick = async function(e){
       e.stopPropagation();
       var idx = parseInt(btn.getAttribute('data-idx'), 10);
       if(!isNaN(idx) && v.documents && v.documents[idx]){
         var removed = v.documents.splice(idx, 1)[0];
         logEvent(activeVehicleId, 'Document supprimé : ' + removed.name);
-        persist();
+        await persist();
         renderContent();
       }
     };
@@ -637,8 +724,7 @@ function renderContent(){
     };
   });
 }
-
-// Modales
+// ---- Modale : Nouvelle / Édition intervention ----
 function openEntryModal(entryId){
   editingEntryId = entryId;
   var v = state.vehicles[activeVehicleId];
@@ -682,7 +768,7 @@ function openEntryModal(entryId){
   if(entry) document.getElementById('deleteBtn').onclick = function(){ deleteEntry(entry.id); };
 }
 
-function saveEntry(){
+async function saveEntry(){
   var typeId = document.getElementById('f-type').value;
   var date = document.getElementById('f-date').value;
   var km = parseInt(document.getElementById('f-km').value || '0', 10);
@@ -724,12 +810,12 @@ function saveEntry(){
   var v = state.vehicles[activeVehicleId];
   if(v && km > v.mileage) v.mileage = km;
 
-  persist();
+  await persist();
   closeModal();
   renderContent();
 }
 
-function deleteEntry(id){
+async function deleteEntry(id){
   if(!confirm('Supprimer cette intervention ?')) return;
   var list = state.entries[activeVehicleId] || [];
   var entry = list.filter(function(e){ return e.id === id; })[0];
@@ -741,7 +827,7 @@ function deleteEntry(id){
   }
 
   state.entries[activeVehicleId] = list.filter(function(e){ return e.id !== id; });
-  persist();
+  await persist();
   closeModal();
   renderContent();
 }
@@ -752,6 +838,7 @@ function closeModal(){
   editingEntryId = null;
 }
 
+// ---- Modale : Réglages du véhicule ----
 function openSettingsModal(){
   var v = state.vehicles[activeVehicleId];
   var modal = document.getElementById('modal');
@@ -815,7 +902,7 @@ function openSettingsModal(){
     btn.onclick = function(){ deleteType(btn.getAttribute('data-deltype')); };
   });
 
-  document.getElementById('addTypeBtn').onclick = function(){
+  document.getElementById('addTypeBtn').onclick = async function(){
     var input = document.getElementById('newTypeName');
     var name = input.value.trim();
     if(!name){ alert('Merci de nommer le nouveau type.'); return; }
@@ -827,11 +914,11 @@ function openSettingsModal(){
     v.intervals[id] = { km: null, months: null };
 
     logEvent(activeVehicleId, 'Type d\'intervention créé : ' + name);
-    persist();
+    await persist();
     openSettingsModal();
   };
 
-  document.getElementById('saveSettingsBtn').onclick = function(){
+  document.getElementById('saveSettingsBtn').onclick = async function(){
     var oldName = v.name, oldColor = v.color;
     var name = document.getElementById('s-name').value.trim();
     if(name) v.name = name;
@@ -858,13 +945,13 @@ function openSettingsModal(){
     if(v.color !== oldColor) logEvent(activeVehicleId, 'Couleur du véhicule modifiée');
     logEvent(activeVehicleId, 'Réglages des échéances mis à jour');
 
-    persist();
+    await persist();
     closeModal();
     render();
   };
 }
 
-function deleteType(typeId){
+async function deleteType(typeId){
   var t = state.types.filter(function(x){ return x.id === typeId; })[0];
   if(!t) return;
   if(!confirm('Supprimer le type "' + t.label + '" pour tous les véhicules ? Les interventions déjà enregistrées restent visibles dans l\'historique.')) return;
@@ -878,12 +965,13 @@ function deleteType(typeId){
     }
   });
 
-  logEvent(null, 'Type d\'intervention supprimé : ' + t.label);
-  persist();
+  logEvent(null, 'Type d\'intervention supprimé (tous véhicules) : ' + t.label);
+  await persist();
   openSettingsModal();
   renderContent();
 }
 
+// ---- Modale : Ajouter un véhicule ----
 function openAddVehicleModal(){
   var modal = document.getElementById('modal');
   var usedColor = PALETTE[state.order.length % PALETTE.length];
@@ -915,7 +1003,7 @@ function openAddVehicleModal(){
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
 
-  document.getElementById('createVehicleBtn').onclick = function(){
+  document.getElementById('createVehicleBtn').onclick = async function(){
     var name = document.getElementById('nv-name').value.trim();
     if(!name){ alert('Merci de donner un nom au véhicule.'); return; }
 
@@ -934,13 +1022,13 @@ function openAddVehicleModal(){
     activeVehicleId = id;
 
     logEvent(id, 'Véhicule créé');
-    persist();
+    await persist();
     closeModal();
     render();
   };
 }
 
-function deleteVehicle(id){
+async function deleteVehicle(id){
   var v = state.vehicles[id];
   if(!v) return;
   if(!confirm('Supprimer "' + v.name + '" et tout son historique d\'entretien ? Cette action est définitive.')) return;
@@ -951,11 +1039,12 @@ function deleteVehicle(id){
   delete state.entries[id];
   activeVehicleId = state.order[0] || null;
 
-  persist();
+  await persist();
   closeModal();
   render();
 }
 
+// ---- Modale : Journal ----
 function openJournalModal(){
   var modal = document.getElementById('modal');
   var list = (state.journal || []).slice().sort(function(a,b){ return new Date(b.ts) - new Date(a.ts); });
@@ -980,107 +1069,18 @@ function openJournalModal(){
   document.getElementById('cancelBtn').onclick = closeModal;
 }
 
-// Modale Export / Import / Sauvegarde
-function openExportModal(){
-  var modal = document.getElementById('modal');
-  var v = state.vehicles[activeVehicleId];
+// ---- Événements globaux & Démarrage ----
+var emailBtn = document.getElementById('emailLoginBtn');
+if(emailBtn) emailBtn.addEventListener('click', signInEmail);
 
-  modal.innerHTML =
-    '<h3>Sauvegarde & Exportation <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+var accountBtn = document.getElementById('accountBtn');
+if(accountBtn) accountBtn.addEventListener('click', function(){ if(currentUser && confirm('Se déconnecter ?')) signOutCloud(); });
 
-    '<div class="export-box">' +
-      '<h4>💾 Sauvegarde complète (Fichier JSON)</h4>' +
-      '<p>Téléchargez tout votre carnet de bord (véhicules, historiques, documents). Vous pourrez le restaurer sur n\'importe quel appareil.</p>' +
-      '<div class="row2">' +
-        '<button class="btn btn-primary" id="downloadBackupBtn">Télécharger la sauvegarde</button>' +
-        '<button class="btn btn-ghost" id="restoreBackupBtn">Restaurer un fichier</button>' +
-        '<input type="file" id="importJsonInput" style="display:none;" accept=".json">' +
-      '</div>' +
-    '</div>' +
+var addBtn = document.getElementById('addBtn');
+if(addBtn) addBtn.addEventListener('click', function(){ openEntryModal(null); });
 
-    (v ? 
-    '<div class="export-box">' +
-      '<h4>📊 Exporter ' + escapeHtml(v.name) + ' en CSV (Excel)</h4>' +
-      '<p>Téléchargez un tableau CSV contenant l\'historique complet des interventions pour ce véhicule.</p>' +
-      '<button class="btn btn-ghost" id="downloadCsvBtn" style="width:100%;">Télécharger l\'historique (.CSV)</button>' +
-    '</div>' : '') +
-
-    '<div class="modal-actions" style="margin-top:16px;">' +
-      '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
-    '</div>';
-
-  document.getElementById('modalOverlay').classList.add('open');
-  document.getElementById('closeModalBtn').onclick = closeModal;
-  document.getElementById('cancelBtn').onclick = closeModal;
-
-  // Telecharger JSON
-  document.getElementById('downloadBackupBtn').onclick = function(){
-    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
-    var dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute("href", dataStr);
-    dlAnchor.setAttribute("download", "carnet_de_bord_backup_" + new Date().toISOString().substring(0,10) + ".json");
-    document.body.appendChild(dlAnchor);
-    dlAnchor.click();
-    dlAnchor.remove();
-  };
-
-  // Restaurer JSON
-  var importInput = document.getElementById('importJsonInput');
-  document.getElementById('restoreBackupBtn').onclick = function(){ importInput.click(); };
-  importInput.onchange = function(e){
-    var file = e.target.files[0];
-    if(!file) return;
-    var reader = new FileReader();
-    reader.onload = function(evt){
-      try {
-        var parsed = JSON.parse(evt.target.result);
-        if(parsed && parsed.vehicles && parsed.entries){
-          if(confirm('Restaurer cette sauvegarde ? Cela remplacera les données actuelles.')){
-            state = parsed;
-            persist();
-            closeModal();
-            loadState();
-            alert('Sauvegarde restaurée avec succès !');
-          }
-        } else {
-          alert('Format de fichier invalide.');
-        }
-      } catch(err) {
-        alert('Erreur lors de la lecture du fichier JSON.');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  // Export CSV
-  var csvBtn = document.getElementById('downloadCsvBtn');
-  if(csvBtn && v){
-    csvBtn.onclick = function(){
-      var entries = state.entries[activeVehicleId] || [];
-      var csvRows = [["Date", "Kilometrage", "Type Intervention", "Notes/Observations"]];
-
-      entries.forEach(function(e){
-        var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
-        var label = typeObj ? typeObj.label : e.typeId;
-        var cleanNotes = (e.notes || '').replace(/"/g, '""');
-        csvRows.push(['"' + e.date + '"', '"' + e.km + '"', '"' + label + '"', '"' + cleanNotes + '"']);
-      });
-
-      var csvContent = "data:text/csv;charset=utf-8,\uFEFF" + csvRows.map(function(r){ return r.join(";"); }).join("\n");
-      var dlAnchor = document.createElement('a');
-      dlAnchor.setAttribute("href", encodeURI(csvContent));
-      dlAnchor.setAttribute("download", "historique_" + slugify(v.name) + "_" + new Date().toISOString().substring(0,10) + ".csv");
-      document.body.appendChild(dlAnchor);
-      dlAnchor.click();
-      dlAnchor.remove();
-    };
-  }
-}
-
-// Initialisation & événements globaux
-document.getElementById('exportMenuBtn').onclick = openExportModal;
-document.getElementById('journalBtn').onclick = openJournalModal;
-document.getElementById('addBtn').onclick = function(){ openEntryModal(null); };
+var journalBtn = document.getElementById('journalBtn');
+if(journalBtn) journalBtn.addEventListener('click', openJournalModal);
 
 var modalOverlay = document.getElementById('modalOverlay');
 if(modalOverlay){
@@ -1089,7 +1089,23 @@ if(modalOverlay){
   });
 }
 
-loadState();
+// Initialisation
+initCloud();
+if(cloudReady){
+  sb.auth.onAuthStateChange(function(event, session){
+    if(session){
+      currentUser = session.user;
+      var authEl = document.getElementById('authOverlay');
+      if(authEl) authEl.style.display = 'none';
+      loadState();
+    } else {
+      var authEl = document.getElementById('authOverlay');
+      if(authEl) authEl.style.display = 'flex';
+    }
+  });
+} else {
+  loadState();
+}
 
 })();
 </script>
