@@ -453,15 +453,58 @@ function renderDocChips(docs){
       '</div>';
   }).join('');
 }
-async function openDocument(docId){
-  try{
-    var raw = localStorage.getItem('doc:'+docId); if(!raw) throw new Error('Document disponible uniquement sur cet appareil dans cette version.'); var res={value:raw};
-    var w = window.open('', '_blank');
-    if(w){
-      w.document.write('<title>Document</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="'+res.value+'" style="max-width:100%;max-height:100vh;" onerror="this.outerHTML=\'<a href=&quot;'+res.value+'&quot; download style=&quot;color:#fff;font-family:sans-serif;&quot;>Telecharger le fichier</a>\'"></body>');
+async function openDocument(docOrId) {
+  try {
+    var url = null;
+
+    // 1. Si on reçoit directement un objet document (avec une URL Cloud)
+    if (typeof docOrId === 'object' && docOrId !== null) {
+      url = docOrId.url || docOrId.dataUrl || docOrId.thumb;
+    } 
+    // 2. Si on reçoit un ID, on cherche d'abord dans les données des véhicules
+    else if (typeof docOrId === 'string') {
+      // Cherche dans les véhicules pour trouver le document correspondant
+      for (var vId in state.vehicles) {
+        var entries = state.entries[vId] || [];
+        for (var i = 0; i < entries.length; i++) {
+          var docs = entries[i].documents || [];
+          for (var j = 0; j < docs.length; j++) {
+            if (docs[j].id === docOrId) {
+              url = docs[j].url || docs[j].dataUrl;
+              break;
+            }
+          }
+        }
+      }
+      // Récupération de secours dans le localStorage pour les anciens fichiers
+      if (!url) {
+        url = localStorage.getItem('doc:' + docOrId);
+      }
     }
-  }catch(e){
-    alert('Impossible d\u2019ouvrir ce document.');
+
+    if (!url) {
+      throw new Error('Document introuvable.');
+    }
+
+    // Si c'est une URL Cloud Supabase, on l'ouvre directement
+    if (url.startsWith('http')) {
+      window.open(url, '_blank');
+      return;
+    }
+
+    // Sinon (ancien format base64), on l'ouvre dans une nouvelle fenêtre
+    var w = window.open('', '_blank');
+    if (w) {
+      w.document.write(
+        '<title>Document</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="' +
+          url +
+          '" style="max-width:100%;max-height:100vh;" onerror="this.outerHTML=\'<a href=&quot;' +
+          url +
+          '&quot; download style=&quot;color:#fff;font-family:sans-serif;&quot;>Telecharger le fichier</a>\'"></body>'
+      );
+    }
+  } catch (e) {
+    alert('Impossible d\u2019ouvrir ce document : ' + e.message);
   }
 }
 
@@ -490,26 +533,56 @@ async function deleteVehicleDocument(docId){
   await persist();
   renderContent();
 }
-async function addEntryDocuments(entry, fileList){
-  for(var i=0;i<fileList.length;i++){
-    try{
+async function addEntryDocuments(entry, fileList) {
+  if (!entry.documents) entry.documents = [];
+
+  for (var i = 0; i < fileList.length; i++) {
+    try {
       var processed = await processFile(fileList[i]);
       var id = genId('doc');
-      localStorage.setItem('doc:'+id, processed.dataUrl);
-      entry.documents.push({ id:id, name:processed.name, mime:processed.mime, thumb:processed.thumb, size:processed.size, addedAt:new Date().toISOString() });
-      logEvent(activeVehicleId, 'Document ajoute a l\u2019intervention "' + (entry.typeLabelSnapshot||typeLabel(entry.typeId)) + '" : ' + processed.name);
-    }catch(err){ alert(err.message || 'Erreur lors de l\u2019ajout du fichier.'); }
+
+      // On enregistre directement l'URL cloud Supabase dans l'objet du document
+      entry.documents.push({
+        id: id,
+        name: processed.name,
+        mime: processed.mime,
+        url: processed.dataUrl, // <-- URL Cloud Supabase
+        thumb: processed.thumb, // <-- Miniature / URL Cloud Supabase
+        size: processed.size,
+        addedAt: new Date().toISOString(),
+      });
+
+      logEvent(
+        activeVehicleId,
+        'Document ajoute a l\u2019intervention "' +
+          (entry.typeLabelSnapshot || typeLabel(entry.typeId)) +
+          '" : ' +
+          processed.name
+      );
+    } catch (err) {
+      alert(err.message || 'Erreur lors de l\u2019ajout du fichier.');
+    }
   }
+
+  // Sauvegarde globale sur le Cloud Supabase
   await persist();
   openEntryModal(entry);
 }
+
 async function deleteEntryDocument(entry, docId){
   var doc = entry.documents.filter(function(d){ return d.id===docId; })[0];
   if(!doc) return;
   if(!confirm('Supprimer "'+doc.name+'" ?')) return;
+
+  // 1. Retrait du document de la liste de l'intervention
   entry.documents = entry.documents.filter(function(d){ return d.id!==docId; });
+
+  // 2. Nettoyage de secours sur l'ancien système local
   try{ localStorage.removeItem('doc:'+docId); }catch(e){}
+
   logEvent(activeVehicleId, 'Document supprime de l\u2019intervention "' + (entry.typeLabelSnapshot||typeLabel(entry.typeId)) + '" : ' + doc.name);
+
+  // 3. Sauvegarde de la suppression sur le Cloud Supabase
   await persist();
   openEntryModal(entry);
 }
