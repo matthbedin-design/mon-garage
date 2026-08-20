@@ -236,6 +236,8 @@ var DEFAULT_TYPES = [
 var sb = null;
 var cloudReady = false;
 var currentUser = null;
+var realtimeChannel = null;
+var lastKnownUpdatedAt = null; // évite de re-render inutilement sur l'écho de notre propre écriture
 
 var state = {
   vehicles: {},
@@ -421,11 +423,13 @@ function logEvent(vehicleId, message){
 async function persist(){
   if(cloudReady && currentUser){
     try {
+      var nowIso = new Date().toISOString();
       var payload = {
         user_id: currentUser.id,
         state: state,
-        updated_at: new Date().toISOString()
+        updated_at: nowIso
       };
+      lastKnownUpdatedAt = nowIso; // pour ignorer l'écho de cette écriture dans le listener realtime
       var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
       if(res.error) console.error('Erreur sauvegarde cloud:', res.error);
     } catch(e) {
@@ -443,13 +447,15 @@ async function persist(){
 async function loadState(){
   if(cloudReady && currentUser){
     try {
-      var res = await sb.from('user_data').select('state').eq('user_id', currentUser.id).single();
+      var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
       if(res.data && res.data.state){
         state = res.data.state;
+        lastKnownUpdatedAt = res.data.updated_at;
       } else {
         initDefaultState();
         await persist();
       }
+      subscribeRealtime();
     } catch(e) {
       console.error('Erreur chargement cloud:', e);
       initDefaultState();
@@ -529,7 +535,48 @@ async function signInEmail(){
   }
 }
 
+// ---- Synchro en temps réel ----
+// Écoute les changements sur la ligne de cet utilisateur dans user_data : quand une
+// saisie est faite depuis un autre appareil, on recharge l'état et on redessine
+// automatiquement, sans avoir besoin de recharger la page.
+function subscribeRealtime(){
+  if(!cloudReady || !currentUser || !sb) return;
+
+  // Évite les abonnements en doublon si onAuthStateChange se déclenche plusieurs fois
+  if(realtimeChannel){
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+
+  realtimeChannel = sb
+    .channel('user_data_changes_' + currentUser.id)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'user_data',
+      filter: 'user_id=eq.' + currentUser.id
+    }, function(payload){
+      var row = payload.new;
+      if(!row || !row.state) return;
+      // Ignore l'écho de notre propre écriture (déjà appliquée localement)
+      if(row.updated_at && row.updated_at === lastKnownUpdatedAt) return;
+
+      state = row.state;
+      lastKnownUpdatedAt = row.updated_at;
+      renderContent();
+    })
+    .subscribe();
+}
+
+function unsubscribeRealtime(){
+  if(realtimeChannel && sb){
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
 async function signOutCloud(){
+  unsubscribeRealtime();
   if(sb) await sb.auth.signOut();
   currentUser = null;
   var authEl = document.getElementById('authOverlay');
