@@ -358,6 +358,48 @@ async function prepareDocForStorage(file){
   return readFileAsDataUrl(file);
 }
 
+// ---- Upload/suppression vers Supabase Storage (bucket privé "vehicle-documents") ----
+var DOCS_BUCKET = 'vehicle-documents';
+
+function dataUrlToBlob(dataUrl){
+  var parts = dataUrl.split(',');
+  var mimeMatch = parts[0].match(/:(.*?);/);
+  var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+  var binary = atob(parts[1]);
+  var arr = new Uint8Array(binary.length);
+  for(var i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+// Upload un document dans le bucket privé, sous un chemin propre à l'utilisateur
+// (userId/vehicleId/...) pour que les policies RLS puissent restreindre l'accès.
+async function uploadDocToStorage(dataUrl, mime, originalName, vehicleId){
+  var blob = dataUrlToBlob(dataUrl);
+  var ext = (originalName.split('.').pop() || 'bin').toLowerCase();
+  var path = currentUser.id + '/' + vehicleId + '/' + genId('doc') + '.' + ext;
+  var res = await sb.storage.from(DOCS_BUCKET).upload(path, blob, { contentType: mime, upsert: false });
+  if(res.error) throw res.error;
+  return path;
+}
+
+async function deleteDocFromStorage(path){
+  if(!path) return;
+  try { await sb.storage.from(DOCS_BUCKET).remove([path]); }
+  catch(e){ console.error('Erreur suppression document cloud:', e); }
+}
+
+// Génère une URL signée temporaire (1h) pour visualiser un document privé.
+async function openStorageDoc(path){
+  try {
+    var res = await sb.storage.from(DOCS_BUCKET).createSignedUrl(path, 3600);
+    if(res.error || !res.data) throw res.error || new Error('URL non générée');
+    window.open(res.data.signedUrl, '_blank');
+  } catch(e){
+    console.error(e);
+    alert('Impossible d\'ouvrir ce document pour le moment.');
+  }
+}
+
 function genId(prefix){
   return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
@@ -738,11 +780,10 @@ function renderContent(){
   
   (v.documents || []).forEach(function(doc, idx){
     html += '<div class="doc-chip">';
-    if(doc.type && doc.type.indexOf('image/') === 0){
-      html += '<div class="doc-thumb" onclick="window.open(\'' + doc.data + '\',\'_blank\')"><img src="' + doc.data + '" alt="' + escapeHtml(doc.name) + '"></div>';
-    } else {
-      html += '<div class="doc-thumb" onclick="window.open(\'' + doc.data + '\',\'_blank\')">📄</div>';
-    }
+    var thumbContent = (doc.type && doc.type.indexOf('image/') === 0 && doc.data)
+      ? '<img src="' + doc.data + '" alt="' + escapeHtml(doc.name) + '">'
+      : (doc.type && doc.type.indexOf('image/') === 0 ? '🖼' : '📄');
+    html += '<div class="doc-thumb" data-doc-idx="' + idx + '">' + thumbContent + '</div>';
     html += '<div class="doc-name" title="' + escapeHtml(doc.name) + '">' + escapeHtml(doc.name) + '</div>';
     html += '<button class="doc-remove" data-idx="' + idx + '" title="Supprimer">✕</button>';
     html += '</div>';
@@ -894,7 +935,18 @@ function renderContent(){
 
         if(!v.documents) v.documents = [];
         var storedType = (file.type && file.type.indexOf('image/') === 0) ? 'image/jpeg' : file.type;
-        v.documents.push({ name: file.name, type: storedType, data: dataUrl });
+
+        if(cloudReady && currentUser){
+          // Mode cloud : le fichier part dans le bucket privé, seule la référence
+          // (chemin) est gardée dans state — ça évite d'alourdir le JSON synchronisé.
+          var path = await uploadDocToStorage(dataUrl, storedType, file.name, activeVehicleId);
+          v.documents.push({ name: file.name, type: storedType, path: path });
+        } else {
+          // Mode local (pas de compte connecté) : on garde le comportement
+          // précédent, stockage direct en base64 dans state/localStorage.
+          v.documents.push({ name: file.name, type: storedType, data: dataUrl });
+        }
+
         logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
         await persist();
         renderContent();
@@ -908,12 +960,23 @@ function renderContent(){
     };
   }
 
+  Array.prototype.forEach.call(content.querySelectorAll('.doc-thumb'), function(el){
+    el.onclick = function(){
+      var idx = parseInt(el.getAttribute('data-doc-idx'), 10);
+      var doc = v.documents && v.documents[idx];
+      if(!doc) return;
+      if(doc.path) openStorageDoc(doc.path);
+      else if(doc.data) window.open(doc.data, '_blank');
+    };
+  });
+
   Array.prototype.forEach.call(content.querySelectorAll('.doc-remove'), function(btn){
     btn.onclick = async function(e){
       e.stopPropagation();
       var idx = parseInt(btn.getAttribute('data-idx'), 10);
       if(!isNaN(idx) && v.documents && v.documents[idx]){
         var removed = v.documents.splice(idx, 1)[0];
+        if(removed.path) await deleteDocFromStorage(removed.path);
         logEvent(activeVehicleId, 'Document supprimé : ' + removed.name);
         await persist();
         renderContent();
