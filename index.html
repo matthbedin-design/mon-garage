@@ -517,7 +517,11 @@ async function signInEmail(){
   if(!email){ if(statusEl) statusEl.innerText = 'Merci de saisir un e-mail.'; return; }
   
   if(statusEl) statusEl.innerText = 'Envoi du lien...';
-  var res = await sb.auth.signInWithOtp({ email: email });
+  // On force explicitement l'URL de redirection vers la page actuelle (plutôt que de
+  // dépendre uniquement de la "Site URL" configurée dans le dashboard Supabase), pour
+  // éviter tout mauvais aiguillage si ce réglage est absent ou incorrect.
+  var redirectTo = window.location.origin + window.location.pathname;
+  var res = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: redirectTo } });
   if(res.error){
     if(statusEl) statusEl.innerText = 'Erreur : ' + res.error.message;
   } else {
