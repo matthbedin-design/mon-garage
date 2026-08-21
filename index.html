@@ -176,6 +176,7 @@
   .export-actions{ display:flex; gap:8px; }
   .export-btn{ font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.03em; font-size:11px; font-weight:600; background:transparent; border:1px solid var(--border); color:var(--text-muted); padding:5px 10px; border-radius:7px; cursor:pointer; display:flex; align-items:center; gap:5px; }
   .export-btn:hover{ color:var(--yellow); border-color:var(--yellow); }
+  .print-export-date{ display:none; }
 
   @media print {
     body { background: #fff !important; color: #000 !important; }
@@ -187,6 +188,7 @@
     .section-title { color: #333 !important; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
     .history-notes { color: #333 !important; }
     .doc-chip{ display:none !important; } /* les vignettes (URLs signées) n'ont pas de sens sur un PDF imprimé */
+    .print-export-date{ display:block !important; text-align:right; font-size:11px; color:#555 !important; margin-bottom:10px; }
   }
 </style>
 </head>
@@ -525,7 +527,9 @@ function exportHistoryCSV(vehicleId){
   });
 
   // Point-virgule : s'ouvre correctement dans Excel FR sans réglage supplémentaire.
-  var rows = [['Date', 'Type d\'intervention', 'Kilométrage', 'Notes']];
+  var now = new Date();
+  var exportStamp = 'Export généré le ' + now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + ' — ' + v.name + ' (' + fmtKm(v.mileage) + ')';
+  var rows = [[exportStamp], [], ['Date', 'Type d\'intervention', 'Kilométrage', 'Notes']];
   entries.forEach(function(e){
     var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
     var label = typeObj ? typeObj.label : e.typeId;
@@ -546,6 +550,11 @@ function exportHistoryCSV(vehicleId){
 }
 
 function printVehicle(){
+  var el = document.getElementById('printExportDate');
+  if(el){
+    var now = new Date();
+    el.textContent = 'Document généré le ' + now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  }
   window.print();
 }
 
@@ -1007,9 +1016,11 @@ function renderContent(){
   document.documentElement.style.setProperty('--accent', v.color || 'var(--yellow)');
 
   var entries = state.entries[activeVehicleId] || [];
-  
+
+  var html = '<div class="print-export-date" id="printExportDate"></div>';
+
   // Entête du véhicule
-  var html = '<div class="vehicle-header" style="--accent:' + (v.color || 'var(--yellow)') + '">';
+  html += '<div class="vehicle-header" style="--accent:' + (v.color || 'var(--yellow)') + '">';
   html += '<div class="row1">';
   html += '<div>';
   html += '<h1 class="vehicle-name">' + escapeHtml(v.name) + '</h1>';
