@@ -157,6 +157,22 @@
   .confirm-box p{ font-size:14px; line-height:1.5; margin:0 0 18px; }
   .field-hint{ font-size:12px; color:var(--yellow); margin-top:5px; }
 
+  .dash-banner{ padding:12px 16px; border-radius:10px; font-size:14px; font-weight:600; margin-bottom:16px; }
+  .dash-banner.overdue{ background:rgba(217,83,79,.15); color:var(--red); border:1px solid var(--red); }
+  .dash-banner.warning{ background:rgba(240,180,41,.15); color:var(--yellow); border:1px solid var(--yellow); }
+  .dash-banner.ok{ background:rgba(95,174,125,.15); color:var(--green); border:1px solid var(--green); }
+  .dash-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px; }
+  .dash-card{ background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--accent); border-radius:12px; padding:14px; cursor:pointer; transition:transform .15s; }
+  .dash-card:hover{ transform:translateY(-2px); }
+  .dash-card-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .dash-card-name{ font-family:'Oswald',sans-serif; font-size:16px; font-weight:600; }
+  .dash-badge{ font-size:11px; font-weight:700; color:#1a1a1a; padding:3px 8px; border-radius:20px; white-space:nowrap; }
+  .dash-card-meta{ font-size:12px; color:var(--text-muted); margin-bottom:10px; }
+  .dash-alert-list{ list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:5px; }
+  .dash-alert-list li{ font-size:12px; color:var(--text); display:flex; align-items:center; gap:6px; }
+  .dash-dot{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .dash-ok-text{ font-size:12px; color:var(--green); }
+
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay { display: none !important; }
@@ -259,6 +275,7 @@ var state = {
 };
 
 var activeVehicleId = null;
+var DASHBOARD_ID = '__dashboard__';
 var editingEntryId = null;
 
 function initCloud(){
@@ -604,8 +621,8 @@ async function loadState(){
   if(!state.vehicles) state.vehicles = {};
   if(!state.entries) state.entries = {};
 
-  if(state.order.length > 0 && !activeVehicleId){
-    activeVehicleId = state.order[0];
+  if(!activeVehicleId){
+    activeVehicleId = DASHBOARD_ID;
   }
 
   render();
@@ -800,8 +817,12 @@ function render(){
 function renderTabs(){
   var nav = document.getElementById('tabsNav');
   if(!nav) return;
-  
-  var html = state.order.map(function(id){
+
+  var dashActiveClass = (activeVehicleId === DASHBOARD_ID) ? ' active' : '';
+  var dashStyle = (activeVehicleId === DASHBOARD_ID) ? 'border-bottom-color:var(--yellow); color:var(--yellow);' : '';
+  var html = '<button class="tab-btn' + dashActiveClass + '" style="' + dashStyle + '" data-id="' + DASHBOARD_ID + '">📊 Aperçu</button>';
+
+  html += state.order.map(function(id){
     var v = state.vehicles[id];
     if(!v) return '';
     var activeClass = (id === activeVehicleId) ? ' active' : '';
@@ -823,9 +844,112 @@ function renderTabs(){
   if(addTab) addTab.onclick = openAddVehicleModal;
 }
 
+function renderDashboardContent(content){
+  var vehicleIds = state.order.filter(function(id){ return state.vehicles[id]; });
+
+  document.documentElement.style.setProperty('--accent', 'var(--yellow)');
+
+  if(!vehicleIds.length){
+    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button></div>';
+    return;
+  }
+
+  var summaries = vehicleIds.map(function(id){
+    var v = state.vehicles[id];
+    var enabled = v.enabledTypes || [];
+    var items = [];
+    enabled.forEach(function(typeId){
+      var st = computeStatus(id, typeId);
+      if(st && st.last) items.push(st);
+    });
+    var overdue = items.filter(function(s){ return s.isOverdue; });
+    var warning = items.filter(function(s){ return s.isWarning && !s.isOverdue; });
+    var worst = overdue.length ? 'overdue' : (warning.length ? 'warning' : 'ok');
+
+    var alertItems = overdue.concat(warning).sort(function(a, b){
+      var ra = (a.remainingKm !== null ? a.remainingKm : Infinity);
+      var rb = (b.remainingKm !== null ? b.remainingKm : Infinity);
+      var da = (a.remainingDays !== null ? a.remainingDays : Infinity);
+      var db = (b.remainingDays !== null ? b.remainingDays : Infinity);
+      return Math.min(ra, da) - Math.min(rb, db);
+    });
+
+    return { id: id, v: v, worst: worst, overdueCount: overdue.length, warningCount: warning.length, alertItems: alertItems };
+  });
+
+  var totalOverdue = summaries.reduce(function(sum, s){ return sum + s.overdueCount; }, 0);
+  var totalWarning = summaries.reduce(function(sum, s){ return sum + s.warningCount; }, 0);
+
+  var html = '<section>';
+  html += '<h2 class="section-title">Vue d\'ensemble</h2>';
+  if(totalOverdue > 0 || totalWarning > 0){
+    var bannerParts = [];
+    if(totalOverdue > 0) bannerParts.push(totalOverdue + ' échéance' + (totalOverdue > 1 ? 's' : '') + ' dépassée' + (totalOverdue > 1 ? 's' : ''));
+    if(totalWarning > 0) bannerParts.push(totalWarning + ' à surveiller');
+    html += '<div class="dash-banner ' + (totalOverdue > 0 ? 'overdue' : 'warning') + '">⚠️ ' + bannerParts.join(' · ') + '</div>';
+  } else {
+    html += '<div class="dash-banner ok">✅ Tous les véhicules sont à jour</div>';
+  }
+  html += '</section>';
+
+  html += '<section><div class="dash-grid">';
+  summaries.forEach(function(s){
+    var badgeColor = s.worst === 'overdue' ? 'var(--red)' : (s.worst === 'warning' ? 'var(--yellow)' : 'var(--green)');
+    var badgeText = s.worst === 'overdue'
+      ? (s.overdueCount + ' dépassée' + (s.overdueCount > 1 ? 's' : ''))
+      : (s.worst === 'warning' ? (s.warningCount + ' à surveiller') : 'À jour');
+
+    html += '<div class="dash-card" data-vehicle-id="' + s.id + '" style="--accent:' + (s.v.color || 'var(--yellow)') + '">';
+    html += '<div class="dash-card-top">';
+    html += '<div class="dash-card-name">' + escapeHtml(s.v.name) + '</div>';
+    html += '<span class="dash-badge" style="background:' + badgeColor + ';">' + escapeHtml(badgeText) + '</span>';
+    html += '</div>';
+    html += '<div class="dash-card-meta">' + fmtKm(s.v.mileage) + (s.v.plate ? ' · ' + escapeHtml(s.v.plate) : '') + '</div>';
+
+    if(s.alertItems.length){
+      html += '<ul class="dash-alert-list">';
+      s.alertItems.slice(0, 3).forEach(function(item){
+        var parts = [];
+        if(item.remainingKm !== null){
+          parts.push(item.remainingKm <= 0
+            ? ('dépassé de ' + Math.abs(item.remainingKm).toLocaleString('fr-FR') + ' km')
+            : ('dans ' + item.remainingKm.toLocaleString('fr-FR') + ' km'));
+        }
+        if(item.remainingDays !== null){
+          parts.push(item.remainingDays <= 0
+            ? ('dépassé de ' + Math.abs(item.remainingDays) + ' j')
+            : ('dans ' + item.remainingDays + ' j'));
+        }
+        var dot = item.isOverdue ? 'var(--red)' : 'var(--yellow)';
+        html += '<li><span class="dash-dot" style="background:' + dot + ';"></span>' + escapeHtml(item.cfg.label) + ' — ' + parts.join(' / ') + '</li>';
+      });
+      html += '</ul>';
+    } else {
+      html += '<div class="dash-ok-text">Aucune échéance proche</div>';
+    }
+
+    html += '</div>';
+  });
+  html += '</div></section>';
+
+  content.innerHTML = html;
+
+  Array.prototype.forEach.call(content.querySelectorAll('.dash-card'), function(card){
+    card.onclick = function(){
+      activeVehicleId = card.getAttribute('data-vehicle-id');
+      render();
+    };
+  });
+}
+
 function renderContent(){
   var content = document.getElementById('content');
   if(!content) return;
+
+  if(activeVehicleId === DASHBOARD_ID){
+    renderDashboardContent(content);
+    return;
+  }
 
   var v = state.vehicles[activeVehicleId];
   if(!v){
@@ -1401,7 +1525,7 @@ async function deleteVehicle(id){
   state.order = state.order.filter(function(x){ return x !== id; });
   delete state.vehicles[id];
   delete state.entries[id];
-  activeVehicleId = state.order[0] || null;
+  activeVehicleId = DASHBOARD_ID;
 
   await persist();
   closeModal();
