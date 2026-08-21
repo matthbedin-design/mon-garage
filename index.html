@@ -641,6 +641,23 @@ function getMaxEntryKm(vehicleId){
   return max;
 }
 
+// Vérifie qu'un kilométrage saisi pour une date donnée reste cohérent avec les
+// autres interventions déjà enregistrées (l'odomètre ne peut qu'avancer avec le temps).
+// Retourne la première intervention en conflit, ou null si tout est cohérent.
+function findKmConflict(vehicleId, date, km, excludeEntryId){
+  var list = state.entries[vehicleId] || [];
+  for(var i = 0; i < list.length; i++){
+    var e = list[i];
+    if(e.id === excludeEntryId) continue;
+    if(e.km == null || !e.date) continue;
+    // Une intervention antérieure ne devrait pas afficher un km supérieur
+    if(e.date < date && e.km > km) return e;
+    // Une intervention postérieure ne devrait pas afficher un km inférieur
+    if(e.date > date && e.km < km) return e;
+  }
+  return null;
+}
+
 function computeStatus(vehicleId, typeId){
   var v = state.vehicles[vehicleId];
   if(!v) return null;
@@ -1025,6 +1042,15 @@ async function saveEntry(){
 
   if(!date){ alert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ alert('Le kilométrage doit être un nombre positif.'); return; }
+
+  var conflict = findKmConflict(activeVehicleId, date, km, editingEntryId);
+  if(conflict){
+    var conflictType = state.types.filter(function(t){ return t.id === conflict.typeId; })[0];
+    var conflictLabel = conflictType ? conflictType.label : conflict.typeId;
+    var msg = 'Ce kilométrage (' + fmtKm(km) + ' le ' + fmtDate(date) + ') est incohérent avec une intervention déjà enregistrée : "' + conflictLabel + '" à ' + fmtKm(conflict.km) + ' le ' + fmtDate(conflict.date) + '. Continuer quand même ?';
+    var okConflict = await showConfirm(msg, 'Continuer');
+    if(!okConflict) return;
+  }
 
   var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
   var label = typeObj ? typeObj.label : typeId;
