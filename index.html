@@ -411,6 +411,58 @@ async function openStorageDoc(path){
   }
 }
 
+// ---- Cache des URLs signées pour les vignettes d'images ----
+// Évite de régénérer une URL signée à chaque re-render (ex: écho du realtime).
+var thumbUrlCache = {}; // path -> { url, expiresAt }
+var THUMB_URL_TTL_MS = 5 * 60 * 1000; // 5 minutes, cohérent avec la durée demandée à Supabase
+
+// Récupère (en un seul appel groupé) les URLs signées des vignettes d'images
+// manquantes ou expirées, puis met à jour les <div class="doc-thumb"> concernés
+// dans le DOM sans redessiner toute la vue.
+async function loadDocThumbnails(vehicle, containerEl){
+  if(!cloudReady || !currentUser || !vehicle || !vehicle.documents) return;
+
+  var now = Date.now();
+  var toFetch = [];
+  vehicle.documents.forEach(function(doc){
+    if(!doc.path) return;
+    if(!(doc.type && doc.type.indexOf('image/') === 0)) return;
+    var cached = thumbUrlCache[doc.path];
+    if(!cached || cached.expiresAt < now) toFetch.push(doc.path);
+  });
+  if(!toFetch.length){
+    applyCachedThumbnails(vehicle, containerEl);
+    return;
+  }
+
+  try {
+    var res = await sb.storage.from(DOCS_BUCKET).createSignedUrls(toFetch, 300);
+    if(res.error || !res.data) throw res.error || new Error('URLs non générées');
+    res.data.forEach(function(item){
+      if(item.signedUrl && !item.error){
+        thumbUrlCache[item.path] = { url: item.signedUrl, expiresAt: now + THUMB_URL_TTL_MS };
+      }
+    });
+  } catch(e){
+    console.error('Erreur génération vignettes:', e);
+  }
+
+  applyCachedThumbnails(vehicle, containerEl);
+}
+
+function applyCachedThumbnails(vehicle, containerEl){
+  vehicle.documents.forEach(function(doc, idx){
+    if(!doc.path) return;
+    if(!(doc.type && doc.type.indexOf('image/') === 0)) return;
+    var cached = thumbUrlCache[doc.path];
+    if(!cached) return;
+    var el = containerEl.querySelector('.doc-thumb[data-doc-idx="' + idx + '"]');
+    if(el && !el.querySelector('img')){
+      el.innerHTML = '<img src="' + cached.url + '" alt="' + escapeHtml(doc.name) + '">';
+    }
+  });
+}
+
 function genId(prefix){
   return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
@@ -1011,6 +1063,10 @@ function renderContent(){
       }
     };
   });
+
+  // Charge les vraies vignettes d'images en arrière-plan (URLs signées groupées),
+  // sans bloquer l'affichage initial (qui montre 🖼 en attendant).
+  loadDocThumbnails(v, content);
 
   Array.prototype.forEach.call(content.querySelectorAll('.history-row'), function(row){
     row.onclick = function(){
