@@ -141,6 +141,16 @@
   .account-btn{font-size:11px!important;padding:7px 9px!important;width:auto!important}
   .sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--green);margin-right:6px}
 
+  .sync-status{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); padding:4px 10px; border-radius:20px; border:1px solid var(--border); background:var(--surface); white-space:nowrap; transition:border-color .2s, color .2s; }
+  .sync-status .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-muted); flex-shrink:0; }
+  .sync-status.saving .dot{ background:var(--yellow); animation:pulse 1s infinite; }
+  .sync-status.saving{ color:var(--yellow); border-color:var(--yellow); }
+  .sync-status.synced .dot{ background:var(--green); }
+  .sync-status.synced{ color:var(--green); }
+  .sync-status.error .dot{ background:var(--red); }
+  .sync-status.error{ color:var(--red); border-color:var(--red); cursor:pointer; }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
   .confirm-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:80; padding:20px; }
   .confirm-overlay.open{ display:flex; }
   .confirm-box{ background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--red); border-radius:14px; width:100%; max-width:400px; padding:20px; }
@@ -181,6 +191,7 @@
       <p>Suivi d'entretien véhicule</p>
     </div>
     <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités">📋</button>
+    <div class="sync-status" id="syncStatus" style="display:none;"><span class="dot"></span><span id="syncStatusLabel">Synchronisé</span></div>
     <button class="icon-btn account-btn" id="accountBtn" title="Compte"><span class="sync-dot"></span>Compte</button>
   </header>
 
@@ -295,7 +306,7 @@ function slugify(str){
 }
 
 // ---- Gestion des fichiers joints (documents) ----
-var MAX_DOC_BYTES = 1.5 * 1024 * 1024; // 1.5 Mo après compression/lecture, pour rester raisonnable en localStorage/JSON
+var MAX_DOC_BYTES = 1.5 * 1024 * 1024; // 1.5 Mo après compression/lecture, pour rester raisonnable côté JSON stocké
 
 // Redimensionne et compresse une image côté client (limite la taille du base64 stocké)
 function compressImage(file, maxDim, quality){
@@ -462,57 +473,76 @@ function logEvent(vehicleId, message){
 }
 
 // ---- Persistance & Auth Cloud ----
+function setSyncStatus(mode, detail){
+  var el = document.getElementById('syncStatus');
+  var label = document.getElementById('syncStatusLabel');
+  if(!el || !label) return;
+
+  if(mode === 'off'){
+    el.style.display = 'none';
+    return;
+  }
+
+  el.style.display = 'flex';
+  el.className = 'sync-status ' + mode;
+  if(mode === 'saving') label.textContent = 'Sauvegarde…';
+  else if(mode === 'synced') label.textContent = 'Synchronisé';
+  else if(mode === 'error') label.textContent = detail || 'Erreur de connexion';
+}
+
 async function persist(){
-  if(cloudReady && currentUser){
-    try {
-      var nowIso = new Date().toISOString();
-      var payload = {
-        user_id: currentUser.id,
-        state: state,
-        updated_at: nowIso
-      };
-      lastKnownUpdatedAt = nowIso; // pour ignorer l'écho de cette écriture dans le listener realtime
-      var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
-      if(res.error) console.error('Erreur sauvegarde cloud:', res.error);
-    } catch(e) {
-      console.error('Exception sauvegarde cloud:', e);
+  if(!cloudReady || !currentUser){
+    console.error('persist() appelé sans session cloud active — sauvegarde ignorée.');
+    setSyncStatus('error', 'Non connecté — sauvegarde impossible');
+    return false;
+  }
+
+  setSyncStatus('saving');
+  try {
+    var nowIso = new Date().toISOString();
+    var payload = {
+      user_id: currentUser.id,
+      state: state,
+      updated_at: nowIso
+    };
+    lastKnownUpdatedAt = nowIso; // pour ignorer l'écho de cette écriture dans le listener realtime
+    var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
+    if(res.error){
+      console.error('Erreur sauvegarde cloud:', res.error);
+      setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
+      return false;
     }
-  } else {
-    try {
-      localStorage.setItem('cb_data', JSON.stringify(state));
-    } catch(e) {
-      console.error('Erreur localStorage:', e);
-    }
+    setSyncStatus('synced');
+    return true;
+  } catch(e) {
+    console.error('Exception sauvegarde cloud:', e);
+    setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
+    return false;
   }
 }
 
 async function loadState(){
-  if(cloudReady && currentUser){
-    try {
-      var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
-      if(res.data && res.data.state){
-        state = res.data.state;
-        lastKnownUpdatedAt = res.data.updated_at;
-      } else {
-        initDefaultState();
-        await persist();
-      }
-      subscribeRealtime();
-    } catch(e) {
-      console.error('Erreur chargement cloud:', e);
+  if(!cloudReady || !currentUser){
+    console.error('loadState() appelé sans session cloud active.');
+    setSyncStatus('error', 'Non connecté — impossible de charger les données');
+    return;
+  }
+
+  try {
+    var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
+    if(res.data && res.data.state){
+      state = res.data.state;
+      lastKnownUpdatedAt = res.data.updated_at;
+    } else {
       initDefaultState();
+      await persist();
     }
-  } else {
-    try {
-      var raw = localStorage.getItem('cb_data');
-      if(raw){
-        state = JSON.parse(raw);
-      } else {
-        initDefaultState();
-      }
-    } catch(e) {
-      initDefaultState();
-    }
+    subscribeRealtime();
+    setSyncStatus('synced');
+  } catch(e) {
+    console.error('Erreur chargement cloud:', e);
+    setSyncStatus('error', 'Chargement impossible — vérifiez la connexion');
+    initDefaultState();
   }
 
   // Sanity check
@@ -929,22 +959,21 @@ function renderContent(){
       addDocBtn.disabled = true;
       addDocBtn.textContent = '…';
       try {
+        if(!cloudReady || !currentUser){
+          alert('Impossible d\'ajouter un document : non connecté.');
+          return;
+        }
+
         var dataUrl = await prepareDocForStorage(file);
         if(!dataUrl) return; // message déjà affiché par prepareDocForStorage
 
         if(!v.documents) v.documents = [];
         var storedType = (file.type && file.type.indexOf('image/') === 0) ? 'image/jpeg' : file.type;
 
-        if(cloudReady && currentUser){
-          // Mode cloud : le fichier part dans le bucket privé, seule la référence
-          // (chemin) est gardée dans state — ça évite d'alourdir le JSON synchronisé.
-          var path = await uploadDocToStorage(dataUrl, storedType, file.name, activeVehicleId);
-          v.documents.push({ name: file.name, type: storedType, path: path });
-        } else {
-          // Mode local (pas de compte connecté) : on garde le comportement
-          // précédent, stockage direct en base64 dans state/localStorage.
-          v.documents.push({ name: file.name, type: storedType, data: dataUrl });
-        }
+        // Le fichier part dans le bucket privé ; seule la référence (chemin) est
+        // gardée dans state, ça évite d'alourdir le JSON synchronisé.
+        var path = await uploadDocToStorage(dataUrl, storedType, file.name, activeVehicleId);
+        v.documents.push({ name: file.name, type: storedType, path: path });
 
         logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
         await persist();
@@ -1352,6 +1381,11 @@ function openJournalModal(){
 var emailBtn = document.getElementById('emailLoginBtn');
 if(emailBtn) emailBtn.addEventListener('click', signInEmail);
 
+var syncStatusEl = document.getElementById('syncStatus');
+if(syncStatusEl) syncStatusEl.addEventListener('click', function(){
+  if(syncStatusEl.classList.contains('error')) persist();
+});
+
 var accountBtn = document.getElementById('accountBtn');
 if(accountBtn) accountBtn.addEventListener('click', async function(){
   if(!currentUser) return;
@@ -1387,7 +1421,15 @@ if(cloudReady){
     }
   });
 } else {
-  loadState();
+  // Sans configuration Supabase valide, l'app ne peut fonctionner : pas de mode
+  // local de secours (pour éviter toute confusion entre données synchronisées
+  // et données restées uniquement sur cet appareil).
+  var content = document.getElementById('content');
+  if(content){
+    content.innerHTML = '<div class="empty-state">⚠️ Configuration cloud manquante ou invalide.<br><br>Vérifiez SUPABASE_URL et SUPABASE_KEY dans le code.</div>';
+  }
+  var authOverlay = document.getElementById('authOverlay');
+  if(authOverlay) authOverlay.style.display = 'none';
 }
 
 })();
