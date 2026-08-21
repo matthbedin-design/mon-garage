@@ -530,33 +530,15 @@ async function loadState(){
 }
 
 function initDefaultState(){
-  var v1 = genId('v');
-  var v2 = genId('v');
-  var allTypes = DEFAULT_TYPES.map(function(t){ return t.id; });
-
+  // L'app démarre vide : aucune donnée de démo n'est pré-remplie.
+  // L'utilisateur ajoute ses propres véhicules via le bouton "+ Nouveau véhicule".
   state = {
     vehicles: {},
     entries: {},
-    order: [v1, v2],
+    order: [],
     types: DEFAULT_TYPES.slice(),
     journal: []
   };
-
-  state.vehicles[v1] = makeVehicle('Clio 4', PALETTE[0], allTypes);
-  state.vehicles[v1].mileage = 112500;
-  state.vehicles[v1].plate = 'AB-123-CD';
-
-  state.vehicles[v2] = makeVehicle('Camping-car', PALETTE[3], allTypes);
-  state.vehicles[v2].mileage = 84000;
-  state.vehicles[v2].plate = 'EF-456-GH';
-
-  state.entries[v1] = [
-    { id: genId('e'), typeId: 'vidange', date: '2025-05-10', km: 105000, notes: 'Filtre changé', documents: [] }
-  ];
-  state.entries[v2] = [];
-
-  logEvent(v1, 'Véhicule créé');
-  logEvent(v2, 'Véhicule créé');
 }
 
 async function signInEmail(){
