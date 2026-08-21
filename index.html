@@ -186,6 +186,20 @@
   .export-btn:hover{ color:var(--yellow); border-color:var(--yellow); }
   .print-export-date{ display:none; }
 
+  .ct-badge{ display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:20px; margin-top:3px; }
+  .ct-badge.ok{ background:rgba(95,174,125,.18); color:var(--green); }
+  .ct-badge.remarks{ background:rgba(240,180,41,.18); color:var(--yellow); }
+  .ct-badge.ko{ background:rgba(217,83,79,.18); color:var(--red); }
+  .ct-defects-summary{ font-size:11.5px; color:var(--text-muted); margin-top:2px; }
+  .ct-section{ margin-top:4px; padding-top:14px; border-top:1px dashed var(--border); }
+  .ct-defect-row{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .ct-defect-row input[type=text]{ flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 10px; border-radius:8px; }
+  .ct-defect-row input[type=checkbox]{ width:16px;height:16px; accent-color:var(--green); flex:none; }
+  .ct-defect-row .trash-btn{ flex:none; }
+  .ct-add-defect-btn{ font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:12px; font-weight:600; padding:8px 12px; border-radius:8px; border:1px dashed var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
+  .ct-add-defect-btn:hover{ color:var(--yellow); border-color:var(--yellow); }
+  .ct-counter-visit{ margin-top:12px; padding:12px; background:var(--surface-2); border-radius:9px; }
+
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay, .confirm-overlay, .sync-status, .doc-remove, .export-actions { display: none !important; }
@@ -197,6 +211,10 @@
     .history-notes { color: #333 !important; }
     .doc-chip{ display:none !important; } /* les vignettes (URLs signées) n'ont pas de sens sur un PDF imprimé */
     .print-export-date{ display:block !important; text-align:right; font-size:11px; color:#555 !important; margin-bottom:10px; }
+    .ct-badge.ok{ background:#e6f4ea !important; color:#2e7d32 !important; }
+    .ct-badge.remarks{ background:#fff8e1 !important; color:#8a6d00 !important; }
+    .ct-badge.ko{ background:#fdecea !important; color:#b3261e !important; }
+    .ct-defects-summary{ color:#444 !important; }
   }
 </style>
 </head>
@@ -537,11 +555,29 @@ function exportHistoryCSV(vehicleId){
   // Point-virgule : s'ouvre correctement dans Excel FR sans réglage supplémentaire.
   var now = new Date();
   var exportStamp = 'Export généré le ' + now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + ' — ' + v.name + ' (' + fmtKm(v.mileage) + ')';
-  var rows = [[exportStamp], [], ['Date', 'Type d\'intervention', 'Kilométrage', 'Notes']];
+  var rows = [[exportStamp], [], ['Date', 'Type d\'intervention', 'Kilométrage', 'Notes', 'Résultat CT', 'Défauts relevés', 'Contre-visite']];
   entries.forEach(function(e){
     var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
     var label = typeObj ? typeObj.label : e.typeId;
-    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', e.notes || '']);
+
+    var ctResult = '', ctDefects = '', ctCounterVisit = '';
+    if(e.ct){
+      var ctResultLabels = { ok: 'Favorable', remarks: 'Favorable avec remarques', ko: 'Défavorable' };
+      ctResult = ctResultLabels[e.ct.result] || '';
+
+      var defects = e.ct.defects || [];
+      if(defects.length){
+        ctDefects = defects.map(function(d){ return d.label + (d.resolved ? ' (levé)' : ' (non levé)'); }).join(' | ');
+      }
+
+      if(e.ct.result === 'ko' && e.ct.counterVisit){
+        var cv = e.ct.counterVisit;
+        if(cv.done) ctCounterVisit = 'Effectuée le ' + fmtDate(cv.date) + ' — ' + (cv.result === 'ok' ? 'Favorable' : 'Toujours défavorable');
+        else ctCounterVisit = 'À faire avant le ' + fmtDate(cv.deadline);
+      }
+    }
+
+    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', e.notes || '', ctResult, ctDefects, ctCounterVisit]);
   });
 
   var csv = rows.map(function(row){ return row.map(csvEscape).join(';'); }).join('\r\n');
@@ -869,6 +905,29 @@ function computeStatus(vehicleId, typeId){
   }
 
   result.pct = Math.max(pctKm, pctDays);
+
+  // Cas particulier du Contrôle Technique : un résultat défavorable non régularisé
+  // prime sur l'échéance normale (24 mois) — la vraie urgence est la contre-visite.
+  if(typeId === 'ct' && last.ct){
+    result.ct = last.ct;
+    var cv = last.ct.counterVisit;
+    if(last.ct.result === 'ko' && cv && !cv.done){
+      result.needsCounterVisit = true;
+      if(cv.deadline){
+        var deadlineDate = new Date(cv.deadline);
+        var diffCv = Math.ceil((deadlineDate - new Date()) / (1000 * 60 * 60 * 24));
+        result.remainingDays = diffCv;
+        result.remainingKm = null;
+        result.isOverdue = diffCv <= 0;
+        result.isWarning = !result.isOverdue && diffCv <= 15;
+        result.pct = result.isOverdue ? 100 : Math.min(100, Math.max(0, 100 - (diffCv / 60) * 100));
+      } else {
+        // Pas de date limite renseignée : on force quand même une alerte visible
+        result.isOverdue = true;
+      }
+    }
+  }
+
   return result;
 }
 // ---- Rendu UI ----
@@ -973,15 +1032,19 @@ function renderDashboardContent(content){
       html += '<ul class="dash-alert-list">';
       s.alertItems.slice(0, 3).forEach(function(item){
         var parts = [];
-        if(item.remainingKm !== null){
-          parts.push(item.remainingKm <= 0
-            ? ('dépassé de ' + Math.abs(item.remainingKm).toLocaleString('fr-FR') + ' km')
-            : ('dans ' + item.remainingKm.toLocaleString('fr-FR') + ' km'));
-        }
-        if(item.remainingDays !== null){
-          parts.push(item.remainingDays <= 0
-            ? ('dépassé de ' + Math.abs(item.remainingDays) + ' j')
-            : ('dans ' + item.remainingDays + ' j'));
+        if(item.needsCounterVisit){
+          parts.push('contre-visite ' + (item.isOverdue ? 'dépassée' : 'dans ' + item.remainingDays + ' j'));
+        } else {
+          if(item.remainingKm !== null){
+            parts.push(item.remainingKm <= 0
+              ? ('dépassé de ' + Math.abs(item.remainingKm).toLocaleString('fr-FR') + ' km')
+              : ('dans ' + item.remainingKm.toLocaleString('fr-FR') + ' km'));
+          }
+          if(item.remainingDays !== null){
+            parts.push(item.remainingDays <= 0
+              ? ('dépassé de ' + Math.abs(item.remainingDays) + ' j')
+              : ('dans ' + item.remainingDays + ' j'));
+          }
         }
         var dot = item.isOverdue ? 'var(--red)' : 'var(--yellow)';
         html += '<li><span class="dash-dot" style="background:' + dot + ';"></span>' + escapeHtml(item.cfg.label) + ' — ' + parts.join(' / ') + '</li>';
@@ -1082,16 +1145,22 @@ function renderContent(){
 
       var statusText = 'Aucun historique';
       if(st.last){
-        var parts = [];
-        if(st.remainingKm !== null){
-          if(st.remainingKm <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingKm) + ' km');
-          else parts.push('dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+        if(st.needsCounterVisit){
+          statusText = st.isOverdue
+            ? 'Contre-visite dépassée (' + Math.abs(st.remainingDays) + ' j)'
+            : 'Contre-visite dans ' + st.remainingDays + ' j';
+        } else {
+          var parts = [];
+          if(st.remainingKm !== null){
+            if(st.remainingKm <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingKm) + ' km');
+            else parts.push('dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+          }
+          if(st.remainingDays !== null){
+            if(st.remainingDays <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingDays) + ' j');
+            else parts.push('dans ' + st.remainingDays + ' j');
+          }
+          statusText = parts.join(' ou ');
         }
-        if(st.remainingDays !== null){
-          if(st.remainingDays <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingDays) + ' j');
-          else parts.push('dans ' + st.remainingDays + ' j');
-        }
-        statusText = parts.join(' ou ');
       }
 
       html += '<div class="gauge-card">';
@@ -1135,6 +1204,24 @@ function renderContent(){
       html += '<div class="history-main">';
       html += '<div class="history-type">' + escapeHtml(label) + '</div>';
       if(entry.notes) html += '<div class="history-notes">' + escapeHtml(entry.notes) + '</div>';
+      if(entry.ct){
+        var ctResultMap = { ok: ['✅ Favorable', 'ok'], remarks: ['⚠️ Favorable avec remarques', 'remarks'], ko: ['❌ Défavorable', 'ko'] };
+        var ctBadge = ctResultMap[entry.ct.result] || ctResultMap.ok;
+        html += '<span class="ct-badge ' + ctBadge[1] + '">' + ctBadge[0] + '</span>';
+        var defects = entry.ct.defects || [];
+        if(defects.length){
+          var resolvedCount = defects.filter(function(d){ return d.resolved; }).length;
+          html += '<div class="ct-defects-summary">' + defects.length + ' défaut' + (defects.length > 1 ? 's' : '') + ' relevé' + (defects.length > 1 ? 's' : '') + ' (' + resolvedCount + ' levé' + (resolvedCount > 1 ? 's' : '') + ')</div>';
+        }
+        if(entry.ct.result === 'ko' && entry.ct.counterVisit){
+          var cv = entry.ct.counterVisit;
+          if(cv.done){
+            html += '<div class="ct-defects-summary">Contre-visite effectuée le ' + fmtDate(cv.date) + ' — ' + (cv.result === 'ok' ? '✅ Favorable' : '❌ Toujours défavorable') + '</div>';
+          } else if(cv.deadline){
+            html += '<div class="ct-defects-summary">⏳ Contre-visite à faire avant le ' + fmtDate(cv.deadline) + '</div>';
+          }
+        }
+      }
       html += '</div>';
       html += '<div class="history-meta">';
       html += '<div class="km">' + fmtKm(entry.km) + '</div>';
@@ -1275,6 +1362,130 @@ function renderContent(){
   });
 }
 // ---- Modale : Nouvelle / Édition intervention ----
+function renderCtDefectRows(defects){
+  return (defects || []).map(function(d){
+    return '<div class="ct-defect-row" data-defect-id="' + d.id + '">' +
+      '<input type="checkbox" class="ct-defect-resolved" ' + (d.resolved ? 'checked' : '') + '>' +
+      '<input type="text" class="ct-defect-label" value="' + escapeHtml(d.label) + '" placeholder="Ex : Jeu de direction">' +
+      '<button type="button" class="trash-btn ct-defect-remove" title="Retirer">' + trashSvg() + '</button>' +
+      '</div>';
+  }).join('');
+}
+
+function renderCtSection(entry){
+  var ct = (entry && entry.ct) || { result: 'ok', defects: [], counterVisit: null };
+  var result = ct.result || 'ok';
+  var deadline = (ct.counterVisit && ct.counterVisit.deadline) || '';
+  var cvDone = !!(ct.counterVisit && ct.counterVisit.done);
+  var cvDate = (ct.counterVisit && ct.counterVisit.date) || '';
+  var cvResult = (ct.counterVisit && ct.counterVisit.result) || 'ok';
+
+  var html = '<div class="ct-section" id="ctSection">';
+  html += '<div class="field"><label>Résultat du contrôle technique</label><select id="ct-result">';
+  html += '<option value="ok"' + (result === 'ok' ? ' selected' : '') + '>✅ Favorable</option>';
+  html += '<option value="remarks"' + (result === 'remarks' ? ' selected' : '') + '>⚠️ Favorable avec remarques</option>';
+  html += '<option value="ko"' + (result === 'ko' ? ' selected' : '') + '>❌ Défavorable (contre-visite requise)</option>';
+  html += '</select></div>';
+
+  html += '<div class="field"><label>Défauts / anomalies relevés</label>';
+  html += '<div id="ctDefectsList">' + renderCtDefectRows(ct.defects) + '</div>';
+  html += '<button type="button" class="ct-add-defect-btn" id="ctAddDefectBtn">+ Ajouter un défaut</button>';
+  html += '</div>';
+
+  html += '<div id="ctCounterVisitWrap" style="display:' + (result === 'ko' ? 'block' : 'none') + ';">';
+  html += '<div class="ct-counter-visit">';
+  html += '<div class="field"><label>Date limite de contre-visite</label><input type="date" id="ct-cv-deadline" value="' + deadline + '"></div>';
+  html += '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="ct-cv-done" ' + (cvDone ? 'checked' : '') + '><span class="name">Contre-visite effectuée</span></div>';
+  html += '<div id="ctCvDoneFields" style="display:' + (cvDone ? 'block' : 'none') + ';">';
+  html += '<div class="row2">';
+  html += '<div class="field"><label>Date de la contre-visite</label><input type="date" id="ct-cv-date" value="' + cvDate + '"></div>';
+  html += '<div class="field"><label>Résultat</label><select id="ct-cv-result"><option value="ok"' + (cvResult === 'ok' ? ' selected' : '') + '>✅ Favorable</option><option value="ko"' + (cvResult === 'ko' ? ' selected' : '') + '>❌ Toujours défavorable</option></select></div>';
+  html += '</div></div>';
+  html += '</div></div>';
+
+  html += '</div>';
+  return html;
+}
+
+function bindCtSectionEvents(){
+  var resultSelect = document.getElementById('ct-result');
+  var cvWrap = document.getElementById('ctCounterVisitWrap');
+  var cvDeadlineInput = document.getElementById('ct-cv-deadline');
+  if(resultSelect){
+    resultSelect.onchange = function(){
+      var isKo = resultSelect.value === 'ko';
+      if(cvWrap) cvWrap.style.display = isKo ? 'block' : 'none';
+      // Pré-remplit la date limite à +2 mois (délai légal usuel) si elle est vide
+      if(isKo && cvDeadlineInput && !cvDeadlineInput.value){
+        var dateInput = document.getElementById('f-date');
+        var base = dateInput && dateInput.value ? new Date(dateInput.value) : new Date();
+        base.setMonth(base.getMonth() + 2);
+        cvDeadlineInput.value = base.toISOString().substring(0, 10);
+      }
+    };
+  }
+
+  var cvDoneCheckbox = document.getElementById('ct-cv-done');
+  var cvDoneFields = document.getElementById('ctCvDoneFields');
+  if(cvDoneCheckbox){
+    cvDoneCheckbox.onchange = function(){
+      if(cvDoneFields) cvDoneFields.style.display = cvDoneCheckbox.checked ? 'block' : 'none';
+    };
+  }
+
+  var addDefectBtn = document.getElementById('ctAddDefectBtn');
+  var defectsList = document.getElementById('ctDefectsList');
+  if(addDefectBtn && defectsList){
+    addDefectBtn.onclick = function(){
+      var row = document.createElement('div');
+      row.className = 'ct-defect-row';
+      row.setAttribute('data-defect-id', genId('ctd'));
+      row.innerHTML = '<input type="checkbox" class="ct-defect-resolved">' +
+        '<input type="text" class="ct-defect-label" placeholder="Ex : Jeu de direction">' +
+        '<button type="button" class="trash-btn ct-defect-remove" title="Retirer">' + trashSvg() + '</button>';
+      defectsList.appendChild(row);
+      bindCtDefectRemove(row);
+      row.querySelector('.ct-defect-label').focus();
+    };
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.ct-defect-row'), bindCtDefectRemove);
+}
+
+function bindCtDefectRemove(row){
+  var btn = row.querySelector('.ct-defect-remove');
+  if(btn) btn.onclick = function(){ row.remove(); };
+}
+
+function collectCtData(){
+  var result = document.getElementById('ct-result').value;
+  var defects = [];
+  Array.prototype.forEach.call(document.querySelectorAll('.ct-defect-row'), function(row){
+    var labelInput = row.querySelector('.ct-defect-label');
+    var label = labelInput ? labelInput.value.trim() : '';
+    if(!label) return; // ignore les lignes vides
+    defects.push({
+      id: row.getAttribute('data-defect-id') || genId('ctd'),
+      label: label,
+      resolved: row.querySelector('.ct-defect-resolved').checked
+    });
+  });
+
+  var counterVisit = null;
+  if(result === 'ko'){
+    var done = document.getElementById('ct-cv-done').checked;
+    counterVisit = {
+      required: true,
+      deadline: document.getElementById('ct-cv-deadline').value || null,
+      done: done,
+      date: done ? (document.getElementById('ct-cv-date').value || null) : null,
+      result: done ? document.getElementById('ct-cv-result').value : null
+    };
+  }
+
+  return { result: result, defects: defects, counterVisit: counterVisit };
+}
+
 function openEntryModal(entryId){
   editingEntryId = entryId;
   var v = state.vehicles[activeVehicleId];
@@ -1305,6 +1516,7 @@ function openEntryModal(entryId){
       '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
     '</div>' +
     '<div class="field"><label>Notes / Observations</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
+    '<div id="ctSectionWrap" style="display:' + (typeId === 'ct' ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
     '<div class="modal-actions">' +
       (entry ? '<button class="btn btn-danger" id="deleteBtn">Supprimer</button>' : '') +
       '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
@@ -1316,6 +1528,22 @@ function openEntryModal(entryId){
   document.getElementById('cancelBtn').onclick = closeModal;
   document.getElementById('saveBtn').onclick = saveEntry;
   if(entry) document.getElementById('deleteBtn').onclick = function(){ deleteEntry(entry.id); };
+
+  bindCtSectionEvents();
+  var typeSelect = document.getElementById('f-type');
+  if(typeSelect){
+    typeSelect.addEventListener('change', function(){
+      var wrap = document.getElementById('ctSectionWrap');
+      var isCt = typeSelect.value === 'ct';
+      if(wrap){
+        wrap.style.display = isCt ? 'block' : 'none';
+        if(isCt && !document.getElementById('ct-result')){
+          wrap.innerHTML = renderCtSection(null);
+          bindCtSectionEvents();
+        }
+      }
+    });
+  }
 }
 
 async function saveEntry(){
@@ -1339,6 +1567,7 @@ async function saveEntry(){
   var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
   var label = typeObj ? typeObj.label : typeId;
   var now = new Date().toISOString();
+  var ctData = (typeId === 'ct') ? collectCtData() : null;
 
   var list = state.entries[activeVehicleId] || [];
   if(editingEntryId){
@@ -1349,12 +1578,13 @@ async function saveEntry(){
         list[i].km = km;
         list[i].notes = notes;
         list[i].updatedAt = now;
+        if(ctData) list[i].ct = ctData; else delete list[i].ct;
         break;
       }
     }
     logEvent(activeVehicleId, 'Intervention modifiée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   } else {
-    list.push({
+    var newEntry = {
       id: genId('e'),
       typeId: typeId,
       date: date,
@@ -1363,7 +1593,9 @@ async function saveEntry(){
       documents: [],
       createdAt: now,
       updatedAt: now
-    });
+    };
+    if(ctData) newEntry.ct = ctData;
+    list.push(newEntry);
     logEvent(activeVehicleId, 'Intervention ajoutée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   }
 
