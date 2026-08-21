@@ -200,6 +200,10 @@
   .ct-add-defect-btn:hover{ color:var(--yellow); border-color:var(--yellow); }
   .ct-counter-visit{ margin-top:12px; padding:12px; background:var(--surface-2); border-radius:9px; }
 
+
+  .v2-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.v2-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px}.v2-stat span{display:block;font-size:11px;color:var(--text-muted);margin-bottom:6px}.v2-stat strong{font-family:'Oswald',sans-serif;font-size:20px}.v2-actions{display:flex;flex-wrap:wrap;gap:8px}.v2-action{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:11px 13px;cursor:pointer;font-family:'Oswald',sans-serif}.v2-action:hover{border-color:var(--yellow);color:var(--yellow)}.v2-next-list{display:flex;flex-direction:column;gap:7px}.v2-next{display:grid;grid-template-columns:1fr 1.4fr auto;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--yellow);padding:10px 12px;border-radius:8px;font-size:12px}.v2-next.danger{border-left-color:var(--red)}.v2-next em{font-style:normal;color:var(--yellow);text-align:right}.v2-next.danger em{color:var(--red)}
+  @media(max-width:600px){.v2-stats{grid-template-columns:1fr}.v2-next{grid-template-columns:1fr}.v2-next em{text-align:left}}
+
   @media print {
     body { background: #fff !important; color: #000 !important; }
     .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay, .confirm-overlay, .sync-status, .doc-remove, .export-actions { display: none !important; }
@@ -237,7 +241,7 @@
   <header class="topbar">
     <div class="brand-mark">🔧</div>
     <div class="brand-text" style="flex:1;">
-      <h1>Carnet de Bord</h1>
+      <h1>Carnet de Bord <span style="font-size:10px;color:var(--yellow);vertical-align:middle;letter-spacing:.08em;">V2</span></h1>
       <p>Suivi d'entretien véhicule</p>
     </div>
     <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités">📋</button>
@@ -305,7 +309,8 @@ var state = {
   entries: {},
   order: [],
   types: DEFAULT_TYPES.slice(),
-  journal: []
+  journal: [],
+  fuel: []
 };
 
 var activeVehicleId = null;
@@ -735,7 +740,8 @@ function initDefaultState(){
     entries: {},
     order: [],
     types: DEFAULT_TYPES.slice(),
-    journal: []
+    journal: [],
+    fuel: []
   };
 }
 
@@ -1058,6 +1064,40 @@ function renderDashboardContent(content){
   });
   html += '</div></section>';
 
+  // V2 : synthèse financière et actions rapides
+  var currentYear = new Date().getFullYear();
+  var allEntries = [];
+  vehicleIds.forEach(function(id){ (state.entries[id] || []).forEach(function(e){ allEntries.push({e:e, vehicleId:id}); }); });
+  var yearEntries = allEntries.filter(function(x){ return x.e.date && new Date(x.e.date).getFullYear() === currentYear; });
+  var yearFuelCost = (state.fuel || []).filter(function(f){return vehicleIds.indexOf(f.vehicleId)>-1 && f.date && new Date(f.date).getFullYear()===currentYear;}).reduce(function(sum,f){return sum+(Number(f.cost)||0);},0);
+  var yearCost = yearEntries.reduce(function(sum,x){ return sum + (Number(x.e.cost) || 0); }, 0) + yearFuelCost;
+  var fuelCost = (state.fuel || []).filter(function(f){return vehicleIds.indexOf(f.vehicleId)>-1;}).reduce(function(sum,f){return sum+(Number(f.cost)||0);},0);
+  var totalCost = allEntries.reduce(function(sum,x){ return sum + (Number(x.e.cost) || 0); }, 0) + fuelCost;
+  var nextAlerts = [];
+  summaries.forEach(function(s){ s.alertItems.forEach(function(item){ nextAlerts.push({vehicle:s.v, item:item}); }); });
+  nextAlerts.sort(function(a,b){
+    var av = a.item.remainingDays != null ? a.item.remainingDays : Infinity;
+    var bv = b.item.remainingDays != null ? b.item.remainingDays : Infinity;
+    return av-bv;
+  });
+  html += '<section><h2 class="section-title">Finances & suivi</h2>' +
+    '<div class="v2-stats">' +
+      '<div class="v2-stat"><span>💶 Dépensé en ' + currentYear + '</span><strong>' + yearCost.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) + '</strong></div>' +
+      '<div class="v2-stat"><span>📊 Total historique</span><strong>' + totalCost.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}) + '</strong></div>' +
+      '<div class="v2-stat"><span>🧾 Interventions</span><strong>' + allEntries.length + '</strong></div>' +
+    '</div></section>';
+  html += '<section><h2 class="section-title">Actions rapides</h2><div class="v2-actions">' +
+    '<button class="v2-action" id="v2ExpenseBtn">💶 Ajouter une dépense</button>' +
+    '<button class="v2-action" id="v2FuelBtn">⛽ Ajouter un plein</button>' +
+    '<button class="v2-action" id="v2VehicleBtn">🚗 Fiche véhicule</button>' +
+    '</div></section>';
+  html += '<section><h2 class="section-title">Prochaines échéances</h2>' +
+    (nextAlerts.length ? '<div class="v2-next-list">' + nextAlerts.slice(0,6).map(function(a){
+      var cls=a.item.isOverdue?'danger':'warning';
+      var txt=a.item.isOverdue?'Dépassée':(a.item.remainingDays!=null?'dans '+a.item.remainingDays+' j':'à surveiller');
+      return '<div class="v2-next '+cls+'"><span>🚗 '+escapeHtml(a.vehicle.name)+'</span><b>'+escapeHtml(a.item.cfg.label)+'</b><em>'+txt+'</em></div>';
+    }).join('') + '</div>' : '<div class="empty-state">Aucune échéance préoccupante.</div>') + '</section>';
+
   content.innerHTML = html;
 
   Array.prototype.forEach.call(content.querySelectorAll('.dash-card'), function(card){
@@ -1066,6 +1106,9 @@ function renderDashboardContent(content){
       render();
     };
   });
+  var vb=document.getElementById('v2VehicleBtn'); if(vb) vb.onclick=function(){ activeVehicleId=vehicleIds[0]; openSettingsModal(); };
+  var eb=document.getElementById('v2ExpenseBtn'); if(eb) eb.onclick=function(){ activeVehicleId=vehicleIds[0]; openEntryModal(null); };
+  var fb=document.getElementById('v2FuelBtn'); if(fb) fb.onclick=function(){ activeVehicleId=vehicleIds[0]; openFuelModal(); };
 }
 
 function renderContent(){
@@ -1515,8 +1558,12 @@ function openEntryModal(entryId){
       '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
       '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
     '</div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Coût (€)</label><input type="number" step="0.01" min="0" id="f-cost" value="' + (entry && entry.cost != null ? entry.cost : '') + '" placeholder="0,00"></div>' +
+      '<div class="field"><label>Garage / professionnel</label><input type="text" id="f-garage" value="' + escapeHtml(entry && entry.garage || '') + '" placeholder="Nom du garage"></div>' +
+    '</div>' +
     '<div class="field"><label>Notes / Observations</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
-    '<div id="ctSectionWrap" style="display:' + (typeId === 'ct' ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
+    '<div id="ctSectionWrap" style="display:' + ((entry && entry.typeId === 'ct') ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
     '<div class="modal-actions">' +
       (entry ? '<button class="btn btn-danger" id="deleteBtn">Supprimer</button>' : '') +
       '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
@@ -1551,6 +1598,10 @@ async function saveEntry(){
   var date = document.getElementById('f-date').value;
   var km = parseInt(document.getElementById('f-km').value || '0', 10);
   var notes = document.getElementById('f-notes').value.trim();
+  var costRaw = document.getElementById('f-cost').value;
+  var cost = costRaw === '' ? null : parseFloat(costRaw);
+  var garage = document.getElementById('f-garage').value.trim();
+  if(cost !== null && (isNaN(cost) || cost < 0)){ alert('Le coût doit être un montant positif.'); return; }
 
   if(!date){ alert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ alert('Le kilométrage doit être un nombre positif.'); return; }
@@ -1577,6 +1628,8 @@ async function saveEntry(){
         list[i].date = date;
         list[i].km = km;
         list[i].notes = notes;
+        list[i].cost = cost;
+        list[i].garage = garage;
         list[i].updatedAt = now;
         if(ctData) list[i].ct = ctData; else delete list[i].ct;
         break;
@@ -1590,6 +1643,8 @@ async function saveEntry(){
       date: date,
       km: km,
       notes: notes,
+      cost: cost,
+      garage: garage,
       documents: [],
       createdAt: now,
       updatedAt: now
@@ -1837,6 +1892,25 @@ async function deleteVehicle(id){
   await persist();
   closeModal();
   render();
+}
+
+// ---- V2 : carburant ----
+function openFuelModal(){
+  var modal=document.getElementById('modal');
+  var v=state.vehicles[activeVehicleId]; if(!v) return;
+  modal.innerHTML='<h3>Ajouter un plein <button class="icon-btn" id="closeModalBtn">✕</button></h3>'+
+    '<div class="row2"><div class="field"><label>Date</label><input type="date" id="fuel-date" value="'+new Date().toISOString().substring(0,10)+'"></div><div class="field"><label>Kilométrage</label><input type="number" id="fuel-km" value="'+(v.mileage||0)+'"></div></div>'+
+    '<div class="row2"><div class="field"><label>Litres</label><input type="number" step="0.01" id="fuel-liters"></div><div class="field"><label>Montant (€)</label><input type="number" step="0.01" id="fuel-cost"></div></div>'+
+    '<div class="field"><label>Carburant</label><select id="fuel-type"><option>SP95-E10</option><option>SP98</option><option>Diesel</option><option>GPL</option><option>Électrique</option><option>Autre</option></select></div>'+
+    '<div class="modal-actions"><button class="btn btn-ghost" id="cancelBtn">Annuler</button><button class="btn btn-primary" id="saveFuelBtn">Enregistrer</button></div>';
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick=closeModal; document.getElementById('cancelBtn').onclick=closeModal;
+  document.getElementById('saveFuelBtn').onclick=async function(){
+    var liters=parseFloat(document.getElementById('fuel-liters').value||'0'), cost=parseFloat(document.getElementById('fuel-cost').value||'0'), km=parseInt(document.getElementById('fuel-km').value||'0',10);
+    if(liters<=0 || cost<0 || km<0){alert('Merci de vérifier les valeurs.');return;}
+    if(!state.fuel) state.fuel=[]; state.fuel.push({id:genId('fuel'),vehicleId:activeVehicleId,date:document.getElementById('fuel-date').value,km:km,liters:liters,cost:cost,type:document.getElementById('fuel-type').value});
+    if(km>v.mileage)v.mileage=km; logEvent(activeVehicleId,'Plein ajouté : '+liters.toFixed(2)+' L / '+cost.toFixed(2)+' €'); await persist(); closeModal(); renderContent();
+  };
 }
 
 // ---- Modale : Journal ----
