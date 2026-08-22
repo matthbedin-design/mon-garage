@@ -259,14 +259,14 @@
       <h1>Carnet de Bord</h1>
       <p>Suivi d'entretien véhicule</p>
     </div>
-    <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités">📋</button>
+    <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités" aria-label="Journal d'activités">📋</button>
     <div class="sync-status" id="syncStatus" style="display:none;"><span class="dot"></span><span id="syncStatusLabel">Synchronisé</span></div>
     <button class="icon-btn account-btn" id="accountBtn" title="Compte"><span class="sync-dot"></span>Compte</button>
   </header>
 
   <nav class="tabs" id="tabsNav"></nav>
 
-  <main id="content">
+  <main id="content" role="tabpanel">>
     <div class="loading">Chargement des données...</div>
   </main>
 </div>
@@ -317,7 +317,7 @@ var sb = null;
 var cloudReady = false;
 var currentUser = null;
 var realtimeChannel = null;
-var lastKnownUpdatedAt = null; // évite de re-render inutilement sur l'écho de notre propre écriture
+var isWriting = false; // true pendant/juste après une écriture locale, pour ignorer l'écho realtime correspondant
 
 var state = {
   vehicles: {},
@@ -363,6 +363,34 @@ function showConfirm(message, okLabel){
     }
     okBtn.onclick = function(){ cleanup(true); };
     cancelBtn.onclick = function(){ cleanup(false); };
+  });
+}
+
+// ---- Alerte stylée (remplace window.alert) — réutilise la modale de confirmation
+// avec le bouton "Annuler" masqué et un seul bouton "OK". ----
+function showAlert(message){
+  return new Promise(function(resolve){
+    var overlay = document.getElementById('confirmOverlay');
+    var msgEl = document.getElementById('confirmMsg');
+    var okBtn = document.getElementById('confirmOkBtn');
+    var cancelBtn = document.getElementById('confirmCancelBtn');
+    if(!overlay || !msgEl || !okBtn || !cancelBtn){ window.alert(message); resolve(); return; }
+
+    msgEl.textContent = message;
+    okBtn.textContent = 'OK';
+    okBtn.className = 'btn btn-primary';
+    okBtn.style.flex = '1';
+    cancelBtn.style.display = 'none';
+    overlay.classList.add('open');
+
+    function cleanup(){
+      overlay.classList.remove('open');
+      okBtn.onclick = null;
+      okBtn.className = 'btn btn-danger';
+      cancelBtn.style.display = '';
+      resolve();
+    }
+    okBtn.onclick = cleanup;
   });
 }
 
@@ -425,7 +453,7 @@ async function prepareDocForStorage(file){
       dataUrl = await compressImage(file, 1000, 0.6);
     }
     if(dataUrl.length > MAX_DOC_BYTES){
-      alert('Cette image reste trop volumineuse même après compression. Merci d\'en choisir une autre.');
+      await showAlert('Cette image reste trop volumineuse même après compression. Merci d\'en choisir une autre.');
       return null;
     }
     return dataUrl;
@@ -433,7 +461,7 @@ async function prepareDocForStorage(file){
 
   // Non-image (ex : PDF) : pas de compression possible, on applique juste une limite de taille
   if(file.size > MAX_DOC_BYTES){
-    alert('Ce fichier dépasse la taille maximale autorisée (' + Math.round(MAX_DOC_BYTES/1024/1024*10)/10 + ' Mo). Merci de choisir un fichier plus léger.');
+    await showAlert('Ce fichier dépasse la taille maximale autorisée (' + Math.round(MAX_DOC_BYTES/1024/1024*10)/10 + ' Mo). Merci de choisir un fichier plus léger.');
     return null;
   }
   return readFileAsDataUrl(file);
@@ -477,7 +505,7 @@ async function openStorageDoc(path){
     window.open(res.data.signedUrl, '_blank');
   } catch(e){
     console.error(e);
-    alert('Impossible d\'ouvrir ce document pour le moment.');
+    await showAlert('Impossible d\'ouvrir ce document pour le moment.');
   }
 }
 
@@ -629,7 +657,7 @@ function openEmailExportModal(vehicleId){
   var defaultEmail = (currentUser && currentUser.email) || '';
 
   modal.innerHTML =
-    '<h3>Envoyer l\'historique par email <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Envoyer l\'historique par email <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Véhicule</label><input type="text" value="' + escapeHtml(v.name) + '" disabled></div>' +
     '<div class="field"><label>Destinataire</label><input type="email" id="email-recipient" value="' + escapeHtml(defaultEmail) + '" placeholder="adresse@exemple.fr"></div>' +
     '<div class="field"><label>Message (optionnel)</label><textarea id="email-note" placeholder="Ex : Voici le carnet d\'entretien du véhicule..."></textarea></div>' +
@@ -724,6 +752,12 @@ function logEvent(vehicleId, message){
     vehicleName: vehicleName,
     message: message
   });
+  // Garde-fou : évite une croissance non bornée du journal sur plusieurs années
+  // d'usage (le JSON reste léger même après des centaines d'actions).
+  var JOURNAL_MAX = 300;
+  if(state.journal.length > JOURNAL_MAX){
+    state.journal = state.journal.slice(state.journal.length - JOURNAL_MAX);
+  }
 }
 
 // ---- Persistance & Auth Cloud ----
@@ -752,6 +786,7 @@ async function persist(){
   }
 
   setSyncStatus('saving');
+  isWriting = true;
   try {
     var nowIso = new Date().toISOString();
     var payload = {
@@ -759,7 +794,6 @@ async function persist(){
       state: state,
       updated_at: nowIso
     };
-    lastKnownUpdatedAt = nowIso; // pour ignorer l'écho de cette écriture dans le listener realtime
     var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
     if(res.error){
       console.error('Erreur sauvegarde cloud:', res.error);
@@ -772,6 +806,11 @@ async function persist(){
     console.error('Exception sauvegarde cloud:', e);
     setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
     return false;
+  } finally {
+    // Petit délai avant de rebaisser le flag : laisse le temps à l'écho realtime
+    // de notre propre écriture d'arriver et d'être ignoré, plutôt que de comparer
+    // des chaînes de timestamp dont le format peut différer entre le client et Postgres.
+    setTimeout(function(){ isWriting = false; }, 2000);
   }
 }
 
@@ -786,7 +825,6 @@ async function loadState(){
     var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
     if(res.data && res.data.state){
       state = res.data.state;
-      lastKnownUpdatedAt = res.data.updated_at;
     } else {
       initDefaultState();
       await persist();
@@ -866,11 +904,10 @@ function subscribeRealtime(){
     }, function(payload){
       var row = payload.new;
       if(!row || !row.state) return;
-      // Ignore l'écho de notre propre écriture (déjà appliquée localement)
-      if(row.updated_at && row.updated_at === lastKnownUpdatedAt) return;
+      // Ignore l'écho de notre propre écriture en cours (voir isWriting dans persist())
+      if(isWriting) return;
 
       state = row.state;
-      lastKnownUpdatedAt = row.updated_at;
       renderContent();
     })
     .subscribe();
@@ -1030,24 +1067,35 @@ function renderTabs(){
 
   var dashActiveClass = (activeVehicleId === DASHBOARD_ID) ? ' active' : '';
   var dashStyle = (activeVehicleId === DASHBOARD_ID) ? 'border-bottom-color:var(--yellow); color:var(--yellow);' : '';
-  var html = '<button class="tab-btn' + dashActiveClass + '" style="' + dashStyle + '" data-id="' + DASHBOARD_ID + '">📊 Aperçu</button>';
+  var html = '<button class="tab-btn' + dashActiveClass + '" style="' + dashStyle + '" data-id="' + DASHBOARD_ID + '" role="tab" aria-selected="' + (activeVehicleId === DASHBOARD_ID) + '" tabindex="' + (activeVehicleId === DASHBOARD_ID ? '0' : '-1') + '">📊 Aperçu</button>';
 
   html += state.order.map(function(id){
     var v = state.vehicles[id];
     if(!v) return '';
-    var activeClass = (id === activeVehicleId) ? ' active' : '';
-    var style = (id === activeVehicleId) ? 'border-bottom-color:' + v.color + '; color:' + v.color + ';' : '';
-    return '<button class="tab-btn' + activeClass + '" style="' + style + '" data-id="' + id + '">' + escapeHtml(v.name) + '</button>';
+    var isActive = (id === activeVehicleId);
+    var activeClass = isActive ? ' active' : '';
+    var style = isActive ? 'border-bottom-color:' + v.color + '; color:' + v.color + ';' : '';
+    return '<button class="tab-btn' + activeClass + '" style="' + style + '" data-id="' + id + '" role="tab" aria-selected="' + isActive + '" tabindex="' + (isActive ? '0' : '-1') + '">' + escapeHtml(v.name) + '</button>';
   }).join('');
 
-  html += '<button class="tab-add" id="addVehicleTabBtn" title="Ajouter un véhicule">+</button>';
+  html += '<button class="tab-add" id="addVehicleTabBtn" title="Ajouter un véhicule" aria-label="Ajouter un véhicule">+</button>';
   nav.innerHTML = html;
+  nav.setAttribute('role', 'tablist');
 
-  Array.prototype.forEach.call(nav.querySelectorAll('.tab-btn'), function(btn){
+  var tabButtons = Array.prototype.slice.call(nav.querySelectorAll('.tab-btn'));
+  tabButtons.forEach(function(btn, idx){
     btn.onclick = function(){
       activeVehicleId = btn.getAttribute('data-id');
       render();
     };
+    // Navigation clavier : flèches gauche/droite pour passer d'un onglet à l'autre
+    btn.addEventListener('keydown', function(e){
+      if(e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      var nextIdx = e.key === 'ArrowRight' ? (idx + 1) % tabButtons.length : (idx - 1 + tabButtons.length) % tabButtons.length;
+      tabButtons[nextIdx].focus();
+      tabButtons[nextIdx].click();
+    });
   });
 
   var addTab = document.getElementById('addVehicleTabBtn');
@@ -1060,7 +1108,9 @@ function renderDashboardContent(content){
   document.documentElement.style.setProperty('--accent', 'var(--yellow)');
 
   if(!vehicleIds.length){
-    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button></div>';
+    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" id="emptyStateAddBtn">+ Ajouter un véhicule</button></div>';
+    var emptyBtn1 = document.getElementById('emptyStateAddBtn');
+    if(emptyBtn1) emptyBtn1.onclick = openAddVehicleModal;
     return;
   }
 
@@ -1167,7 +1217,9 @@ function renderContent(){
 
   var v = state.vehicles[activeVehicleId];
   if(!v){
-    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button></div>';
+    content.innerHTML = '<div class="empty-state">Aucun véhicule enregistré.<br><br><button class="btn btn-primary" style="width:auto; display:inline-block;" id="emptyStateAddBtn2">+ Ajouter un véhicule</button></div>';
+    var emptyBtn2 = document.getElementById('emptyStateAddBtn2');
+    if(emptyBtn2) emptyBtn2.onclick = openAddVehicleModal;
     return;
   }
 
@@ -1185,7 +1237,7 @@ function renderContent(){
   html += '<h1 class="vehicle-name">' + escapeHtml(v.name) + '</h1>';
   html += '<input type="text" class="vehicle-plate-input" id="v-plate" value="' + escapeHtml(v.plate || '') + '" placeholder="Immatriculation (ex: AA-123-BB)">';
   html += '</div>';
-  html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule">' + gearSvg() + '</button>';
+  html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule" aria-label="Réglages du véhicule">' + gearSvg() + '</button>';
   html += '</div>';
 
   // Kilométrage
@@ -1206,7 +1258,7 @@ function renderContent(){
       : (doc.type && doc.type.indexOf('image/') === 0 ? '🖼' : '📄');
     html += '<div class="doc-thumb" data-doc-idx="' + idx + '">' + thumbContent + '</div>';
     html += '<div class="doc-name" title="' + escapeHtml(doc.name) + '">' + escapeHtml(doc.name) + '</div>';
-    html += '<button class="doc-remove" data-idx="' + idx + '" title="Supprimer">✕</button>';
+    html += '<button class="doc-remove" data-idx="' + idx + '" title="Supprimer" aria-label="Supprimer le document">✕</button>';
     html += '</div>';
   });
 
@@ -1342,7 +1394,7 @@ function renderContent(){
       if(isNaN(val)){ kmInput.value = v.mileage || 0; return; }
 
       if(val < 0){
-        alert('Le kilométrage ne peut pas être négatif.');
+        await showAlert('Le kilométrage ne peut pas être négatif.');
         kmInput.value = v.mileage || 0;
         return;
       }
@@ -1392,7 +1444,7 @@ function renderContent(){
       addDocBtn.textContent = '…';
       try {
         if(!cloudReady || !currentUser){
-          alert('Impossible d\'ajouter un document : non connecté.');
+          await showAlert('Impossible d\'ajouter un document : non connecté.');
           return;
         }
 
@@ -1412,7 +1464,7 @@ function renderContent(){
         renderContent();
       } catch(err) {
         console.error(err);
-        alert('Impossible d\'ajouter ce document.');
+        await showAlert('Impossible d\'ajouter ce document.');
       } finally {
         addDocBtn.disabled = false;
         addDocBtn.textContent = '+';
@@ -1461,7 +1513,7 @@ function renderCtDefectRows(defects){
     return '<div class="ct-defect-row" data-defect-id="' + d.id + '">' +
       '<input type="checkbox" class="ct-defect-resolved" ' + (d.resolved ? 'checked' : '') + '>' +
       '<input type="text" class="ct-defect-label" value="' + escapeHtml(d.label) + '" placeholder="Ex : Jeu de direction">' +
-      '<button type="button" class="trash-btn ct-defect-remove" title="Retirer">' + trashSvg() + '</button>' +
+      '<button type="button" class="trash-btn ct-defect-remove" title="Retirer" aria-label="Retirer ce défaut">' + trashSvg() + '</button>' +
       '</div>';
   }).join('');
 }
@@ -1536,7 +1588,7 @@ function bindCtSectionEvents(){
       row.setAttribute('data-defect-id', genId('ctd'));
       row.innerHTML = '<input type="checkbox" class="ct-defect-resolved">' +
         '<input type="text" class="ct-defect-label" placeholder="Ex : Jeu de direction">' +
-        '<button type="button" class="trash-btn ct-defect-remove" title="Retirer">' + trashSvg() + '</button>';
+        '<button type="button" class="trash-btn ct-defect-remove" title="Retirer" aria-label="Retirer ce défaut">' + trashSvg() + '</button>';
       defectsList.appendChild(row);
       bindCtDefectRemove(row);
       row.querySelector('.ct-defect-label').focus();
@@ -1617,7 +1669,7 @@ function openEntryModal(entryId){
   var showCtInitially = entry ? (entry.typeId === 'ct') : false;
 
   modal.innerHTML =
-    '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     typeSelectionHtml +
     '<div class="row2">' +
       '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
@@ -1676,8 +1728,8 @@ async function saveEntry(){
   var km = parseInt(document.getElementById('f-km').value || '0', 10);
   var sharedNotes = document.getElementById('f-notes').value.trim();
 
-  if(!date){ alert('Merci de renseigner une date.'); return; }
-  if(isNaN(km) || km < 0){ alert('Le kilométrage doit être un nombre positif.'); return; }
+  if(!date){ await showAlert('Merci de renseigner une date.'); return; }
+  if(isNaN(km) || km < 0){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
 
   var typeIds;
   if(editingEntryId){
@@ -1685,7 +1737,7 @@ async function saveEntry(){
   } else {
     typeIds = Array.prototype.filter.call(document.querySelectorAll('.f-type-multi'), function(cb){ return cb.checked; })
       .map(function(cb){ return cb.value; });
-    if(!typeIds.length){ alert('Merci de sélectionner au moins un type d\'intervention.'); return; }
+    if(!typeIds.length){ await showAlert('Merci de sélectionner au moins un type d\'intervention.'); return; }
   }
 
   var conflict = findKmConflict(activeVehicleId, date, km, editingEntryId);
@@ -1824,7 +1876,7 @@ function openSettingsModal(){
         '<span class="name">' + escapeHtml(t.label) + '</span>' +
         '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
         '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
-        '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+        '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules" aria-label="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
         '</div>' +
         '<input type="text" class="ref-input" data-type="' + t.id + '" data-field="notes" value="' + escapeHtml(notesVal) + '" placeholder="Référence (ex : 5W30 - 4,5L - filtre réf. XYZ)">' +
         '</div>';
@@ -1837,7 +1889,7 @@ function openSettingsModal(){
   var canDelete = state.order.length > 1;
 
   modal.innerHTML =
-    '<h3>Réglages du véhicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Réglages du véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Nom du véhicule</label><input type="text" id="s-name" value="' + escapeHtml(v.name) + '"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="s-swatches"></div></div>' +
     '<hr class="hr">' +
@@ -1894,7 +1946,7 @@ function openSettingsModal(){
   document.getElementById('addTypeBtn').onclick = async function(){
     var input = document.getElementById('newTypeName');
     var name = input.value.trim();
-    if(!name){ alert('Merci de nommer le nouveau type.'); return; }
+    if(!name){ await showAlert('Merci de nommer le nouveau type.'); return; }
     var id = slugify(name);
 
     // Sauvegarde d'abord les modifications déjà faites dans le formulaire
@@ -1970,14 +2022,14 @@ function renderTypesManagerModal(){
     return '<div class="tm-type-row">' +
       '<div class="tm-type-head">' +
         '<input type="text" class="tm-type-name" data-type="' + t.id + '" value="' + escapeHtml(t.label) + '">' +
-        '<button class="trash-btn tm-type-delete" data-type="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+        '<button class="trash-btn tm-type-delete" data-type="' + t.id + '" title="Supprimer ce type pour tous les véhicules" aria-label="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
       '</div>' +
       '<div class="tm-vehicle-list">' + vehicleChecklist(t.id, 'tm-vehicle-toggle') + '</div>' +
     '</div>';
   }).join('');
 
   modal.innerHTML =
-    '<h3>Types d\'intervention <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Types d\'intervention <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field-hint" style="margin-bottom:12px;">Ces types sont partagés entre tous les véhicules. Renommez-les ou cochez/décochez les véhicules concernés — tout se sauvegarde automatiquement.</div>' +
     '<div id="tmTypesList">' + rows + '</div>' +
     '<hr class="hr">' +
@@ -2042,10 +2094,10 @@ function renderTypesManagerModal(){
   if(addBtnTm) addBtnTm.onclick = async function(){
     var input = document.getElementById('tmNewTypeName');
     var name = input.value.trim();
-    if(!name){ alert('Merci de nommer le nouveau type.'); return; }
+    if(!name){ await showAlert('Merci de nommer le nouveau type.'); return; }
     var id = slugify(name);
     if(state.types.filter(function(t){ return t.id === id; }).length){
-      alert('Un type avec un nom trop proche existe déjà.');
+      await showAlert('Un type avec un nom trop proche existe déjà.');
       return;
     }
     state.types.push({ id: id, label: name, km: null, months: null });
@@ -2074,7 +2126,7 @@ function openAddVehicleModal(){
   var usedColor = PALETTE[state.order.length % PALETTE.length];
 
   modal.innerHTML =
-    '<h3>Ajouter un véhicule <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Ajouter un véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Nom</label><input type="text" id="nv-name" placeholder="Ex : Clio, Camping-car..."></div>' +
     '<div class="field"><label>Kilométrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="nv-swatches"></div></div>' +
@@ -2102,7 +2154,7 @@ function openAddVehicleModal(){
 
   document.getElementById('createVehicleBtn').onclick = async function(){
     var name = document.getElementById('nv-name').value.trim();
-    if(!name){ alert('Merci de donner un nom au véhicule.'); return; }
+    if(!name){ await showAlert('Merci de donner un nom au véhicule.'); return; }
 
     var km = parseInt(document.getElementById('nv-km').value || '0', 10);
     var selected = swatchWrap.querySelector('.swatch.selected');
@@ -2158,7 +2210,7 @@ function openJournalModal(){
   }).join('');
 
   modal.innerHTML =
-    '<h3>Journal des modifications <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<h3>Journal des modifications <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     (list.length ? rows : '<div class="empty-state">Aucune modification enregistrée pour le moment.</div>') +
     '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
 
@@ -2195,6 +2247,18 @@ if(modalOverlay){
     if(e.target.id === 'modalOverlay') closeModal();
   });
 }
+
+// Fermeture au clavier (Échap) — modale d'édition et modale de confirmation/alerte
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  var overlay = document.getElementById('modalOverlay');
+  if(overlay && overlay.classList.contains('open')){ closeModal(); return; }
+  var confirmOverlay = document.getElementById('confirmOverlay');
+  if(confirmOverlay && confirmOverlay.classList.contains('open')){
+    var cancelBtn = document.getElementById('confirmCancelBtn');
+    if(cancelBtn && cancelBtn.style.display !== 'none' && cancelBtn.onclick) cancelBtn.onclick();
+  }
+});
 
 // Initialisation
 initCloud();
