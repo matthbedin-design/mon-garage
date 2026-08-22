@@ -68,6 +68,7 @@
   section{ margin-bottom:26px; }
 
   .gauge-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
+  .gauge-ref{ font-size:11px; color:var(--text-muted); margin-top:3px; }
   .gauge-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
   .gauge-label{ font-size:14px; font-weight:600; }
   .gauge-status{ font-family:'JetBrains Mono',monospace; font-size:12px; }
@@ -111,13 +112,17 @@
   .btn-ghost:hover{ color:var(--text); }
   .btn-danger{ background:transparent; color:var(--red); border-color:var(--red); flex:none; padding:12px 16px; }
 
-  .type-row{ display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .type-row{ padding:9px 0; border-bottom:1px solid var(--border); }
   .type-row:last-child{ border-bottom:none; }
+  .type-row .type-row-main{ display:flex; align-items:center; gap:8px; }
   .type-row input[type=checkbox]{ width:16px;height:16px; accent-color: var(--yellow); flex:none; }
-  .type-row .name{ flex:1; font-size:13.5px; }
+  .type-row .name{ flex:1; font-size:13.5px; background:transparent; border:1px solid transparent; color:var(--text); font-family:inherit; padding:4px 6px; border-radius:6px; }
+  .type-row .name:focus{ border-color:var(--border); background:var(--surface-2); outline:none; }
   .type-row.disabled .name{ color:var(--text-muted); }
   .type-row input[type=number]{ width:58px; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:12.5px; padding:6px 5px; border-radius:6px; text-align:center; }
   .type-row .unit{ font-size:11px; color:var(--text-muted); width:28px; }
+  .type-row .ref-input{ width:100%; margin-top:6px; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:6px 9px; border-radius:6px; }
+  .type-row .ref-input::placeholder{ color:var(--text-muted); opacity:.7; }
   .trash-btn{ background:none; border:none; color:var(--text-muted); cursor:pointer; flex:none; padding:4px; display:flex; }
   .trash-btn:hover{ color:var(--red); }
 
@@ -125,6 +130,15 @@
   .add-type-row input{ flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:13.5px; padding:9px 11px; border-radius:9px; }
   .add-type-row button{ flex:none; font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:12.5px; font-weight:600; padding:9px 14px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; }
   .add-type-row button:hover{ border-color:var(--yellow); color:var(--yellow); }
+
+  .tm-type-row{ padding:12px 0; border-bottom:1px solid var(--border); }
+  .tm-type-row:last-child{ border-bottom:none; }
+  .tm-type-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .tm-type-head input[type=text]{ flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:14px; font-weight:600; padding:8px 10px; border-radius:8px; }
+  .tm-vehicle-list{ display:flex; flex-wrap:wrap; gap:6px; }
+  .tm-vehicle-chip{ display:flex; align-items:center; gap:5px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:20px; cursor:pointer; }
+  .tm-vehicle-chip input{ accent-color:var(--yellow); width:14px; height:14px; }
+  .tm-vehicle-chip:has(input:checked){ border-color:var(--yellow); color:var(--yellow); }
 
   .swatches{ display:flex; gap:9px; flex-wrap:wrap; margin-top:4px; }
   .swatch{ width:32px;height:32px;border-radius:50%; border:2px solid transparent; cursor:pointer; }
@@ -1001,6 +1015,8 @@ function computeStatus(vehicleId, typeId){
 function render(){
   renderTabs();
   renderContent();
+  var fab = document.querySelector('.fab');
+  if(fab) fab.style.display = (activeVehicleId === DASHBOARD_ID) ? 'none' : 'flex';
 }
 
 function renderTabs(){
@@ -1235,6 +1251,8 @@ function renderContent(){
       html += '<span class="gauge-label">' + escapeHtml(st.cfg.label) + '</span>';
       html += '<span class="gauge-status" style="color:' + barColor + ';">' + escapeHtml(statusText) + '</span>';
       html += '</div>';
+      var typeNotes = (v.intervals && v.intervals[st.cfg.id] && v.intervals[st.cfg.id].notes) || '';
+      if(typeNotes) html += '<div class="gauge-ref">📎 ' + escapeHtml(typeNotes) + '</div>';
       html += '<div class="gauge-track">';
       html += '<div class="fill" style="width:' + st.pct + '%; background:' + barColor + ';"></div>';
       html += '</div>';
@@ -1619,7 +1637,21 @@ function openEntryModal(entryId){
           bindCtSectionEvents();
         }
       }
+      // Pré-remplit les notes avec la référence renseignée pour ce type (uniquement
+      // pour une nouvelle intervention, et seulement si le champ est encore vide).
+      if(!entry){
+        var notesField = document.getElementById('f-notes');
+        var ref = (v.intervals && v.intervals[typeSelect.value] && v.intervals[typeSelect.value].notes) || '';
+        if(notesField && !notesField.value.trim() && ref) notesField.value = ref;
+      }
     });
+
+    // Pré-remplissage initial (nouvelle intervention, type déjà sélectionné par défaut)
+    if(!entry){
+      var initialRef = (v.intervals && v.intervals[initialTypeId] && v.intervals[initialTypeId].notes) || '';
+      var initialNotesField = document.getElementById('f-notes');
+      if(initialNotesField && !initialNotesField.value.trim() && initialRef) initialNotesField.value = initialRef;
+    }
   }
 }
 
@@ -1733,6 +1765,11 @@ function collectSettingsFormData(v, modal, swatchWrap){
     if(!v.intervals[t]) v.intervals[t] = {};
     v.intervals[t][field] = val;
   });
+  Array.prototype.forEach.call(modal.querySelectorAll('.type-row .ref-input'), function(inp){
+    var t = inp.getAttribute('data-type');
+    if(!v.intervals[t]) v.intervals[t] = {};
+    v.intervals[t].notes = inp.value.trim() || null;
+  });
 }
 
 function openSettingsModal(){
@@ -1744,13 +1781,17 @@ function openSettingsModal(){
     var enabled = (v.enabledTypes || []).indexOf(t.id) > -1;
     var kmVal = iv.km !== undefined ? iv.km : t.km;
     var monthsVal = iv.months !== undefined ? iv.months : t.months;
+    var notesVal = iv.notes || '';
 
     return '<div class="type-row' + (enabled ? '' : ' disabled') + '">' +
+      '<div class="type-row-main">' +
       '<input type="checkbox" data-toggle="' + t.id + '"' + (enabled ? ' checked' : '') + '>' +
       '<span class="name">' + escapeHtml(t.label) + '</span>' +
       '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
       '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
       '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+      '</div>' +
+      '<input type="text" class="ref-input" data-type="' + t.id + '" data-field="notes" value="' + escapeHtml(notesVal) + '" placeholder="Référence (ex : 5W30 - 4,5L - filtre réf. XYZ)">' +
       '</div>';
   }).join('');
 
@@ -1766,6 +1807,7 @@ function openSettingsModal(){
         '<input type="text" id="newTypeName" placeholder="Nouveau type (ex : Recharge Clim)">' +
         '<button id="addTypeBtn">+ Ajouter</button>' +
       '</div>' +
+      '<button type="button" class="export-btn" id="openTypesManagerBtn" style="margin-top:10px;">🏷️ Gérer les types pour plusieurs véhicules</button>' +
     '</div>' +
     '<div class="modal-actions" style="margin-top:16px;">' +
       (canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce véhicule</button>' : '') +
@@ -1795,11 +1837,20 @@ function openSettingsModal(){
   }
 
   Array.prototype.forEach.call(modal.querySelectorAll('[data-deltype]'), function(btn){
-    btn.onclick = function(){
+    btn.onclick = async function(){
       collectSettingsFormData(v, modal, swatchWrap);
-      deleteType(btn.getAttribute('data-deltype'));
+      await persist();
+      var removed = await deleteType(btn.getAttribute('data-deltype'));
+      if(removed) openSettingsModal();
     };
   });
+
+  var openTypesManagerBtn = document.getElementById('openTypesManagerBtn');
+  if(openTypesManagerBtn) openTypesManagerBtn.onclick = function(){
+    collectSettingsFormData(v, modal, swatchWrap);
+    persist();
+    openTypesManagerModal();
+  };
 
   document.getElementById('addTypeBtn').onclick = async function(){
     var input = document.getElementById('newTypeName');
@@ -1839,9 +1890,9 @@ function openSettingsModal(){
 
 async function deleteType(typeId){
   var t = state.types.filter(function(x){ return x.id === typeId; })[0];
-  if(!t) return;
+  if(!t) return false;
   var ok = await showConfirm('Supprimer le type "' + t.label + '" pour tous les véhicules ? Les interventions déjà enregistrées restent visibles dans l\'historique.', 'Supprimer');
-  if(!ok) return;
+  if(!ok) return false;
 
   state.types = state.types.filter(function(x){ return x.id !== typeId; });
   state.order.forEach(function(id){
@@ -1854,8 +1905,128 @@ async function deleteType(typeId){
 
   logEvent(null, 'Type d\'intervention supprimé (tous véhicules) : ' + t.label);
   await persist();
-  openSettingsModal();
   renderContent();
+  return true;
+}
+
+// ---- Modale : gestion des types d'intervention pour plusieurs véhicules ----
+function openTypesManagerModal(){
+  renderTypesManagerModal();
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function renderTypesManagerModal(){
+  var modal = document.getElementById('modal');
+
+  function vehicleChecklist(typeId, checkboxClass){
+    return state.order.map(function(vid){
+      var vv = state.vehicles[vid];
+      if(!vv) return '';
+      var checked = typeId ? ((vv.enabledTypes || []).indexOf(typeId) > -1) : false;
+      return '<label class="tm-vehicle-chip"><input type="checkbox" class="' + checkboxClass + '" data-type="' + (typeId || '') + '" data-vehicle="' + vid + '"' + (checked ? ' checked' : '') + '>' + escapeHtml(vv.name) + '</label>';
+    }).join('');
+  }
+
+  var rows = state.types.map(function(t){
+    return '<div class="tm-type-row">' +
+      '<div class="tm-type-head">' +
+        '<input type="text" class="tm-type-name" data-type="' + t.id + '" value="' + escapeHtml(t.label) + '">' +
+        '<button class="trash-btn tm-type-delete" data-type="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+      '</div>' +
+      '<div class="tm-vehicle-list">' + vehicleChecklist(t.id, 'tm-vehicle-toggle') + '</div>' +
+    '</div>';
+  }).join('');
+
+  modal.innerHTML =
+    '<h3>Types d\'intervention <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:12px;">Ces types sont partagés entre tous les véhicules. Renommez-les ou cochez/décochez les véhicules concernés — tout se sauvegarde automatiquement.</div>' +
+    '<div id="tmTypesList">' + rows + '</div>' +
+    '<hr class="hr">' +
+    '<div class="field"><label>Nouveau type</label>' +
+      '<div class="add-type-row"><input type="text" id="tmNewTypeName" placeholder="Ex : Recharge Clim"></div>' +
+      '<div class="tm-vehicle-list" id="tmNewTypeVehicles" style="margin-top:8px;">' + vehicleChecklist(null, 'tm-new-vehicle-toggle') + '</div>' +
+      '<button type="button" class="ct-add-defect-btn" id="tmAddTypeBtn" style="margin-top:10px;">+ Ajouter ce type</button>' +
+    '</div>' +
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      '<button class="btn btn-primary" id="cancelBtn">Fermer</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = function(){ closeModal(); render(); };
+  document.getElementById('cancelBtn').onclick = function(){ closeModal(); render(); };
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.tm-type-name'), function(inp){
+    inp.onchange = async function(){
+      var id = inp.getAttribute('data-type');
+      var newLabel = inp.value.trim();
+      var t = state.types.filter(function(x){ return x.id === id; })[0];
+      if(!t) return;
+      if(!newLabel){ inp.value = t.label; return; }
+      if(t.label !== newLabel){
+        logEvent(null, 'Type d\'intervention renommé : "' + t.label + '" -> "' + newLabel + '"');
+        t.label = newLabel;
+        await persist();
+        renderContent();
+      }
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.tm-vehicle-toggle'), function(cb){
+    cb.onchange = async function(){
+      var typeId = cb.getAttribute('data-type');
+      var vehicleId = cb.getAttribute('data-vehicle');
+      var vv = state.vehicles[vehicleId];
+      if(!vv) return;
+      if(!vv.enabledTypes) vv.enabledTypes = [];
+      var idx = vv.enabledTypes.indexOf(typeId);
+      if(cb.checked && idx === -1){
+        vv.enabledTypes.push(typeId);
+        if(!vv.intervals) vv.intervals = {};
+        if(!vv.intervals[typeId]) vv.intervals[typeId] = {};
+        logEvent(vehicleId, 'Type activé : ' + typeId);
+      } else if(!cb.checked && idx > -1){
+        vv.enabledTypes.splice(idx, 1);
+        logEvent(vehicleId, 'Type désactivé : ' + typeId);
+      }
+      await persist();
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.tm-type-delete'), function(btn){
+    btn.onclick = async function(){
+      var removed = await deleteType(btn.getAttribute('data-type'));
+      if(removed) renderTypesManagerModal();
+    };
+  });
+
+  var addBtnTm = document.getElementById('tmAddTypeBtn');
+  if(addBtnTm) addBtnTm.onclick = async function(){
+    var input = document.getElementById('tmNewTypeName');
+    var name = input.value.trim();
+    if(!name){ alert('Merci de nommer le nouveau type.'); return; }
+    var id = slugify(name);
+    if(state.types.filter(function(t){ return t.id === id; }).length){
+      alert('Un type avec un nom trop proche existe déjà.');
+      return;
+    }
+    state.types.push({ id: id, label: name, km: null, months: null });
+
+    var checkedVehicles = Array.prototype.filter.call(modal.querySelectorAll('.tm-new-vehicle-toggle'), function(cb){ return cb.checked; })
+      .map(function(cb){ return cb.getAttribute('data-vehicle'); });
+
+    checkedVehicles.forEach(function(vid){
+      var vv = state.vehicles[vid];
+      if(!vv) return;
+      if(!vv.enabledTypes) vv.enabledTypes = [];
+      vv.enabledTypes.push(id);
+      if(!vv.intervals) vv.intervals = {};
+      vv.intervals[id] = { km: null, months: null };
+    });
+
+    logEvent(null, 'Type d\'intervention créé : ' + name);
+    await persist();
+    renderTypesManagerModal();
+  };
 }
 
 // ---- Modale : Ajouter un véhicule ----
