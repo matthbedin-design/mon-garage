@@ -1751,11 +1751,9 @@ function collectSettingsFormData(v, modal, swatchWrap){
   var selected = swatchWrap.querySelector('.swatch.selected');
   if(selected) v.color = selected.getAttribute('data-color');
 
-  var newEnabled = [];
-  Array.prototype.forEach.call(modal.querySelectorAll('[data-toggle]'), function(cb){
-    if(cb.checked) newEnabled.push(cb.getAttribute('data-toggle'));
-  });
-  v.enabledTypes = newEnabled;
+  // Note : l'activation/désactivation des types se fait désormais uniquement
+  // via "Gérer les types pour plusieurs véhicules" (modale globale) — cette
+  // modale n'affiche que les types déjà actifs et ne modifie donc plus v.enabledTypes.
 
   if(!v.intervals) v.intervals = {};
   Array.prototype.forEach.call(modal.querySelectorAll('.type-row input[type=number]'), function(inp){
@@ -1776,24 +1774,29 @@ function openSettingsModal(){
   var v = state.vehicles[activeVehicleId];
   var modal = document.getElementById('modal');
 
-  var rows = state.types.map(function(t){
-    var iv = (v.intervals && v.intervals[t.id]) || {};
-    var enabled = (v.enabledTypes || []).indexOf(t.id) > -1;
-    var kmVal = iv.km !== undefined ? iv.km : t.km;
-    var monthsVal = iv.months !== undefined ? iv.months : t.months;
-    var notesVal = iv.notes || '';
+  var enabledTypeIds = v.enabledTypes || [];
+  var rows = state.types
+    .filter(function(t){ return enabledTypeIds.indexOf(t.id) > -1; })
+    .map(function(t){
+      var iv = (v.intervals && v.intervals[t.id]) || {};
+      var kmVal = iv.km !== undefined ? iv.km : t.km;
+      var monthsVal = iv.months !== undefined ? iv.months : t.months;
+      var notesVal = iv.notes || '';
 
-    return '<div class="type-row' + (enabled ? '' : ' disabled') + '">' +
-      '<div class="type-row-main">' +
-      '<input type="checkbox" data-toggle="' + t.id + '"' + (enabled ? ' checked' : '') + '>' +
-      '<span class="name">' + escapeHtml(t.label) + '</span>' +
-      '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
-      '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
-      '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
-      '</div>' +
-      '<input type="text" class="ref-input" data-type="' + t.id + '" data-field="notes" value="' + escapeHtml(notesVal) + '" placeholder="Référence (ex : 5W30 - 4,5L - filtre réf. XYZ)">' +
-      '</div>';
-  }).join('');
+      return '<div class="type-row">' +
+        '<div class="type-row-main">' +
+        '<span class="name">' + escapeHtml(t.label) + '</span>' +
+        '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
+        '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
+        '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+        '</div>' +
+        '<input type="text" class="ref-input" data-type="' + t.id + '" data-field="notes" value="' + escapeHtml(notesVal) + '" placeholder="Référence (ex : 5W30 - 4,5L - filtre réf. XYZ)">' +
+        '</div>';
+    }).join('');
+
+  if(!rows){
+    rows = '<div class="field-hint" style="padding:10px 0;">Aucun type actif pour ce véhicule. Utilisez "Gérer les types pour plusieurs véhicules" ci-dessous pour en activer.</div>';
+  }
 
   var canDelete = state.order.length > 1;
 
