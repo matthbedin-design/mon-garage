@@ -140,6 +140,11 @@
   .tm-vehicle-chip input{ accent-color:var(--yellow); width:14px; height:14px; }
   .tm-vehicle-chip:has(input:checked){ border-color:var(--yellow); color:var(--yellow); }
 
+  .type-select-list{ display:flex; flex-wrap:wrap; gap:7px; }
+  .type-select-chip{ display:flex; align-items:center; gap:6px; font-size:13px; background:var(--surface-2); border:1px solid var(--border); padding:7px 12px; border-radius:20px; cursor:pointer; }
+  .type-select-chip input{ accent-color:var(--yellow); width:15px; height:15px; flex:none; }
+  .type-select-chip:has(input:checked){ border-color:var(--yellow); color:var(--yellow); background:rgba(240,180,41,.1); }
+
   .swatches{ display:flex; gap:9px; flex-wrap:wrap; margin-top:4px; }
   .swatch{ width:32px;height:32px;border-radius:50%; border:2px solid transparent; cursor:pointer; }
   .swatch.selected{ border-color:var(--text); }
@@ -1584,12 +1589,24 @@ function openEntryModal(entryId){
   var entry = entryId ? entries.filter(function(e){ return e.id === entryId; })[0] : null;
 
   var enabledTypes = v.enabledTypes || [];
-  var typeOptions = state.types
-    .filter(function(t){ return enabledTypes.indexOf(t.id) > -1 || (entry && entry.typeId === t.id); })
-    .map(function(t){
-      var selected = entry && entry.typeId === t.id ? ' selected' : '';
+  var availableTypes = state.types.filter(function(t){ return enabledTypes.indexOf(t.id) > -1 || (entry && entry.typeId === t.id); });
+
+  var typeSelectionHtml;
+  if(entry){
+    // Édition d'une intervention existante : un seul type, comme avant.
+    var typeOptions = availableTypes.map(function(t){
+      var selected = entry.typeId === t.id ? ' selected' : '';
       return '<option value="' + t.id + '"' + selected + '>' + escapeHtml(t.label) + '</option>';
     }).join('');
+    typeSelectionHtml = '<div class="field"><label>Type d\'intervention</label><select id="f-type">' + typeOptions + '</select></div>';
+  } else {
+    // Nouvelle intervention : sélection multiple, pour loguer en une fois
+    // plusieurs opérations réalisées le même jour au même kilométrage.
+    var chips = availableTypes.map(function(t){
+      return '<label class="type-select-chip"><input type="checkbox" class="f-type-multi" value="' + t.id + '">' + escapeHtml(t.label) + '</label>';
+    }).join('');
+    typeSelectionHtml = '<div class="field"><label>Type(s) d\'intervention</label><div class="type-select-list">' + chips + '</div></div>';
+  }
 
   var modal = document.getElementById('modal');
   var title = entry ? 'Modifier l\'intervention' : 'Nouvelle intervention';
@@ -1597,21 +1614,17 @@ function openEntryModal(entryId){
   var kmVal = entry ? entry.km : v.mileage;
   var notesVal = entry ? (entry.notes || '') : '';
 
-  var initialTypeId = entry ? entry.typeId : null;
-  if(!initialTypeId){
-    var firstEnabled = state.types.filter(function(t){ return enabledTypes.indexOf(t.id) > -1; })[0];
-    initialTypeId = firstEnabled ? firstEnabled.id : null;
-  }
+  var showCtInitially = entry ? (entry.typeId === 'ct') : false;
 
   modal.innerHTML =
     '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn">\u2715</button></h3>' +
-    '<div class="field"><label>Type d\'intervention</label><select id="f-type">' + typeOptions + '</select></div>' +
+    typeSelectionHtml +
     '<div class="row2">' +
       '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
       '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
     '</div>' +
-    '<div class="field"><label>Notes / Observations</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
-    '<div id="ctSectionWrap" style="display:' + (initialTypeId === 'ct' ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
+    '<div class="field"><label>Notes / Observations' + (entry ? '' : ' <span class="field-hint" style="display:inline;">(appliquées à toutes les interventions sélectionnées, sinon la référence de chaque type est utilisée)</span>') + '</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
+    '<div id="ctSectionWrap" style="display:' + (showCtInitially ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
     '<div class="modal-actions">' +
       (entry ? '<button class="btn btn-danger" id="deleteBtn">Supprimer</button>' : '') +
       '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
@@ -1625,44 +1638,55 @@ function openEntryModal(entryId){
   if(entry) document.getElementById('deleteBtn').onclick = function(){ deleteEntry(entry.id); };
 
   bindCtSectionEvents();
-  var typeSelect = document.getElementById('f-type');
-  if(typeSelect){
-    typeSelect.addEventListener('change', function(){
-      var wrap = document.getElementById('ctSectionWrap');
-      var isCt = typeSelect.value === 'ct';
-      if(wrap){
-        wrap.style.display = isCt ? 'block' : 'none';
-        if(isCt && !document.getElementById('ct-result')){
-          wrap.innerHTML = renderCtSection(null);
-          bindCtSectionEvents();
-        }
-      }
-      // Pré-remplit les notes avec la référence renseignée pour ce type (uniquement
-      // pour une nouvelle intervention, et seulement si le champ est encore vide).
-      if(!entry){
-        var notesField = document.getElementById('f-notes');
-        var ref = (v.intervals && v.intervals[typeSelect.value] && v.intervals[typeSelect.value].notes) || '';
-        if(notesField && !notesField.value.trim() && ref) notesField.value = ref;
-      }
-    });
 
-    // Pré-remplissage initial (nouvelle intervention, type déjà sélectionné par défaut)
-    if(!entry){
-      var initialRef = (v.intervals && v.intervals[initialTypeId] && v.intervals[initialTypeId].notes) || '';
-      var initialNotesField = document.getElementById('f-notes');
-      if(initialNotesField && !initialNotesField.value.trim() && initialRef) initialNotesField.value = initialRef;
+  if(entry){
+    var typeSelect = document.getElementById('f-type');
+    if(typeSelect){
+      typeSelect.addEventListener('change', function(){
+        var wrap = document.getElementById('ctSectionWrap');
+        var isCt = typeSelect.value === 'ct';
+        if(wrap){
+          wrap.style.display = isCt ? 'block' : 'none';
+          if(isCt && !document.getElementById('ct-result')){
+            wrap.innerHTML = renderCtSection(null);
+            bindCtSectionEvents();
+          }
+        }
+      });
     }
+  } else {
+    Array.prototype.forEach.call(document.querySelectorAll('.f-type-multi'), function(cb){
+      cb.addEventListener('change', function(){
+        var wrap = document.getElementById('ctSectionWrap');
+        var ctChecked = Array.prototype.some.call(document.querySelectorAll('.f-type-multi'), function(c){ return c.checked && c.value === 'ct'; });
+        if(wrap){
+          wrap.style.display = ctChecked ? 'block' : 'none';
+          if(ctChecked && !document.getElementById('ct-result')){
+            wrap.innerHTML = renderCtSection(null);
+            bindCtSectionEvents();
+          }
+        }
+      });
+    });
   }
 }
 
 async function saveEntry(){
-  var typeId = document.getElementById('f-type').value;
   var date = document.getElementById('f-date').value;
   var km = parseInt(document.getElementById('f-km').value || '0', 10);
-  var notes = document.getElementById('f-notes').value.trim();
+  var sharedNotes = document.getElementById('f-notes').value.trim();
 
   if(!date){ alert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ alert('Le kilométrage doit être un nombre positif.'); return; }
+
+  var typeIds;
+  if(editingEntryId){
+    typeIds = [document.getElementById('f-type').value];
+  } else {
+    typeIds = Array.prototype.filter.call(document.querySelectorAll('.f-type-multi'), function(cb){ return cb.checked; })
+      .map(function(cb){ return cb.value; });
+    if(!typeIds.length){ alert('Merci de sélectionner au moins un type d\'intervention.'); return; }
+  }
 
   var conflict = findKmConflict(activeVehicleId, date, km, editingEntryId);
   if(conflict){
@@ -1673,19 +1697,21 @@ async function saveEntry(){
     if(!okConflict) return;
   }
 
-  var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
-  var label = typeObj ? typeObj.label : typeId;
+  var v = state.vehicles[activeVehicleId];
   var now = new Date().toISOString();
-  var ctData = (typeId === 'ct') ? collectCtData() : null;
-
+  var ctData = (typeIds.indexOf('ct') > -1) ? collectCtData() : null;
   var list = state.entries[activeVehicleId] || [];
+
   if(editingEntryId){
+    var typeId = typeIds[0];
+    var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
+    var label = typeObj ? typeObj.label : typeId;
     for(var i = 0; i < list.length; i++){
       if(list[i].id === editingEntryId){
         list[i].typeId = typeId;
         list[i].date = date;
         list[i].km = km;
-        list[i].notes = notes;
+        list[i].notes = sharedNotes;
         list[i].updatedAt = now;
         if(ctData) list[i].ct = ctData; else delete list[i].ct;
         break;
@@ -1693,22 +1719,32 @@ async function saveEntry(){
     }
     logEvent(activeVehicleId, 'Intervention modifiée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   } else {
-    var newEntry = {
-      id: genId('e'),
-      typeId: typeId,
-      date: date,
-      km: km,
-      notes: notes,
-      documents: [],
-      createdAt: now,
-      updatedAt: now
-    };
-    if(ctData) newEntry.ct = ctData;
-    list.push(newEntry);
-    logEvent(activeVehicleId, 'Intervention ajoutée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
+    var createdLabels = [];
+    typeIds.forEach(function(tId){
+      var tObj = state.types.filter(function(t){ return t.id === tId; })[0];
+      var tLabel = tObj ? tObj.label : tId;
+      // Texte partagé prioritaire s'il a été renseigné ; sinon on retombe sur la
+      // référence propre à ce type pour ce véhicule (huile, pneus, pièce...).
+      var refNote = (v.intervals && v.intervals[tId] && v.intervals[tId].notes) || '';
+      var notesForThis = sharedNotes || refNote;
+
+      var newEntry = {
+        id: genId('e'),
+        typeId: tId,
+        date: date,
+        km: km,
+        notes: notesForThis,
+        documents: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      if(tId === 'ct' && ctData) newEntry.ct = ctData;
+      list.push(newEntry);
+      createdLabels.push(tLabel);
+    });
+    logEvent(activeVehicleId, 'Intervention' + (createdLabels.length > 1 ? 's' : '') + ' ajoutée' + (createdLabels.length > 1 ? 's' : '') + ' : ' + createdLabels.join(', ') + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   }
 
-  var v = state.vehicles[activeVehicleId];
   if(v && km > v.mileage) v.mileage = km;
 
   await persist();
