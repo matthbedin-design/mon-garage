@@ -139,6 +139,9 @@
   .tm-vehicle-chip{ display:flex; align-items:center; gap:5px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:20px; cursor:pointer; }
   .tm-vehicle-chip input{ accent-color:var(--yellow); width:14px; height:14px; }
   .tm-vehicle-chip:has(input:checked){ border-color:var(--yellow); color:var(--yellow); }
+  .tm-reminder-row{ display:flex; align-items:center; gap:6px; margin-bottom:9px; flex-wrap:wrap; }
+  .tm-reminder-label{ font-size:12px; color:var(--text-muted); margin-right:2px; }
+  .tm-reminder-input{ width:56px; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:12px; padding:5px 4px; border-radius:6px; text-align:center; }
 
   .type-select-list{ display:flex; flex-wrap:wrap; gap:7px; }
   .type-select-chip{ display:flex; align-items:center; gap:6px; font-size:13px; background:var(--surface-2); border:1px solid var(--border); padding:7px 12px; border-radius:20px; cursor:pointer; }
@@ -937,7 +940,11 @@ function getTypeConfig(vehicle, typeId){
     id: globalType.id,
     label: globalType.label,
     km: custom.km !== undefined ? custom.km : globalType.km,
-    months: custom.months !== undefined ? custom.months : globalType.months
+    months: custom.months !== undefined ? custom.months : globalType.months,
+    // Seuils de rappel personnalisables par type (ex : prévenir 2 mois avant une
+    // vidange, 1 mois avant un CT) — valeurs par défaut inchangées si non réglées.
+    reminderKm: (globalType.reminderKm != null) ? globalType.reminderKm : 1000,
+    reminderDays: (globalType.reminderDays != null) ? globalType.reminderDays : 30
   };
 }
 
@@ -1006,7 +1013,7 @@ function computeStatus(vehicleId, typeId){
     result.remainingKm = cfg.km - doneKm;
     pctKm = Math.min(100, Math.max(0, (doneKm / cfg.km) * 100));
     if(result.remainingKm <= 0) result.isOverdue = true;
-    else if(result.remainingKm <= 1000) result.isWarning = true;
+    else if(result.remainingKm <= cfg.reminderKm) result.isWarning = true;
   }
 
   var pctDays = 0;
@@ -1024,7 +1031,7 @@ function computeStatus(vehicleId, typeId){
     pctDays = Math.min(100, Math.max(0, (doneDays / totalDays) * 100));
 
     if(result.remainingDays <= 0) result.isOverdue = true;
-    else if(result.remainingDays <= 30) result.isWarning = true;
+    else if(result.remainingDays <= cfg.reminderDays) result.isWarning = true;
   }
 
   result.pct = Math.max(pctKm, pctDays);
@@ -1042,7 +1049,7 @@ function computeStatus(vehicleId, typeId){
         result.remainingDays = diffCv;
         result.remainingKm = null;
         result.isOverdue = diffCv <= 0;
-        result.isWarning = !result.isOverdue && diffCv <= 15;
+        result.isWarning = !result.isOverdue && diffCv <= cfg.reminderDays;
         result.pct = result.isOverdue ? 100 : Math.min(100, Math.max(0, 100 - (diffCv / 60) * 100));
       } else {
         // Pas de date limite renseignée : on force quand même une alerte visible
@@ -2019,10 +2026,17 @@ function renderTypesManagerModal(){
   }
 
   var rows = state.types.map(function(t){
+    var reminderKmVal = (t.reminderKm != null) ? t.reminderKm : '';
+    var reminderDaysVal = (t.reminderDays != null) ? t.reminderDays : '';
     return '<div class="tm-type-row">' +
       '<div class="tm-type-head">' +
         '<input type="text" class="tm-type-name" data-type="' + t.id + '" value="' + escapeHtml(t.label) + '">' +
         '<button class="trash-btn tm-type-delete" data-type="' + t.id + '" title="Supprimer ce type pour tous les véhicules" aria-label="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
+      '</div>' +
+      '<div class="tm-reminder-row">' +
+        '<span class="tm-reminder-label">🔔 Prévenir</span>' +
+        '<input type="number" class="tm-reminder-input" data-type="' + t.id + '" data-field="reminderKm" value="' + reminderKmVal + '" placeholder="1000"><span class="unit">km avant</span>' +
+        '<input type="number" class="tm-reminder-input" data-type="' + t.id + '" data-field="reminderDays" value="' + reminderDaysVal + '" placeholder="30"><span class="unit">j avant</span>' +
       '</div>' +
       '<div class="tm-vehicle-list">' + vehicleChecklist(t.id, 'tm-vehicle-toggle') + '</div>' +
     '</div>';
@@ -2059,6 +2073,20 @@ function renderTypesManagerModal(){
         await persist();
         renderContent();
       }
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.tm-reminder-input'), function(inp){
+    inp.onchange = async function(){
+      var id = inp.getAttribute('data-type');
+      var field = inp.getAttribute('data-field');
+      var t = state.types.filter(function(x){ return x.id === id; })[0];
+      if(!t) return;
+      var val = inp.value === '' ? null : parseInt(inp.value, 10);
+      if(val !== null && val < 0){ inp.value = ''; val = null; }
+      t[field] = val;
+      await persist();
+      renderContent();
     };
   });
 
