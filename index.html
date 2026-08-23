@@ -58,6 +58,11 @@
   .cost-by-year{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px 14px; }
   .cost-year-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
   .cost-year-row:last-child{ border-bottom:none; }
+  .hist-filters{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:12px; }
+  .hist-filters select, .hist-filters input[type=text], .hist-filters input[type=date]{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:7px 9px; border-radius:8px; }
+  .hist-filters input[type=text]{ min-width:130px; flex:1; }
+  .hist-filter-check{ display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-muted); white-space:nowrap; }
+  .hist-filter-check input{ accent-color:var(--yellow); width:14px; height:14px; }
   .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; border-radius:8px; padding:4px 10px; width:150px; }
   .mileage-input:focus{ outline:none; border-color:var(--accent); }
   .mileage-unit{ font-family:'JetBrains Mono',monospace; color:var(--text-muted); font-size:13px; }
@@ -146,6 +151,7 @@
   .tm-type-row{ padding:12px 0; border-bottom:1px solid var(--border); }
   .tm-type-row:last-child{ border-bottom:none; }
   .tm-type-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .tm-type-category{ flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:8px 6px; border-radius:8px; }
   .tm-type-head input[type=text]{ flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:14px; font-weight:600; padding:8px 10px; border-radius:8px; }
   .tm-vehicle-list{ display:flex; flex-wrap:wrap; gap:6px; }
   .tm-vehicle-chip{ display:flex; align-items:center; gap:5px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:20px; cursor:pointer; }
@@ -319,13 +325,22 @@ var SUPABASE_KEY = "sb_publishable_sJ03uwVNlmaB1D-L9Z-sPQ_blLApFkM";
 var PALETTE = ['#F0B429', '#E12D39', '#2EC4B6', '#3A86FF', '#8338EC', '#FF006E', '#00F5D4', '#FF9F1C'];
 
 var DEFAULT_TYPES = [
-  { id: 'vidange', label: 'Vidange moteur', km: 15000, months: 12 },
-  { id: 'filtre-huile', label: 'Filtre à huile', km: 15000, months: 12 },
-  { id: 'filtre-air', label: 'Filtre à air', km: 30000, months: 24 },
-  { id: 'filtre-habitacle', label: 'Filtre habitacle', km: 15000, months: 12 },
-  { id: 'distribution', label: 'Courroie de distribution', km: 100000, months: 60 },
-  { id: 'freins-avant', label: 'Plaquettes / Disques AV', km: 40000, months: null },
-  { id: 'ct', label: 'Contrôle Technique', km: null, months: 24 }
+  { id: 'vidange', label: 'Vidange moteur', km: 15000, months: 12, category: 'entretien' },
+  { id: 'filtre-huile', label: 'Filtre à huile', km: 15000, months: 12, category: 'entretien' },
+  { id: 'filtre-air', label: 'Filtre à air', km: 30000, months: 24, category: 'entretien' },
+  { id: 'filtre-habitacle', label: 'Filtre habitacle', km: 15000, months: 12, category: 'entretien' },
+  { id: 'distribution', label: 'Courroie de distribution', km: 100000, months: 60, category: 'entretien' },
+  { id: 'freins-avant', label: 'Plaquettes / Disques AV', km: 40000, months: null, category: 'freinage' },
+  { id: 'ct', label: 'Contrôle Technique', km: null, months: 24, category: 'ct' }
+];
+
+var HISTORY_CATEGORIES = [
+  { id: 'entretien', label: 'Entretien' },
+  { id: 'pneus', label: 'Pneus' },
+  { id: 'freinage', label: 'Freinage' },
+  { id: 'ct', label: 'CT' },
+  { id: 'reparation', label: 'Réparation' },
+  { id: 'autre', label: 'Autre' }
 ];
 
 var sb = null;
@@ -345,6 +360,33 @@ var state = {
 var activeVehicleId = null;
 var DASHBOARD_ID = '__dashboard__';
 var editingEntryId = null;
+
+// Filtres de l'historique (état d'affichage uniquement, non persisté) — réinitialisés
+// automatiquement au changement de véhicule.
+var historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
+var historyFiltersVehicleId = null;
+
+function matchesHistoryFilters(entry, typeLabel, category){
+  if(historyFilters.category !== 'all' && category !== historyFilters.category) return false;
+  if(historyFilters.invoiceOnly && !entry.invoiceDoc) return false;
+  if(historyFilters.dateFrom && entry.date < historyFilters.dateFrom) return false;
+  if(historyFilters.dateTo && entry.date > historyFilters.dateTo) return false;
+  if(historyFilters.garage){
+    var g = (entry.garage || '').toLowerCase();
+    if(g.indexOf(historyFilters.garage.toLowerCase()) === -1) return false;
+  }
+  if(historyFilters.search){
+    var s = historyFilters.search.toLowerCase();
+    var haystack = (typeLabel + ' ' + (entry.notes || '') + ' ' + (entry.garage || '')).toLowerCase();
+    if(haystack.indexOf(s) === -1) return false;
+  }
+  return true;
+}
+
+function hasActiveHistoryFilters(){
+  return historyFilters.category !== 'all' || historyFilters.garage || historyFilters.search ||
+    historyFilters.invoiceOnly || historyFilters.dateFrom || historyFilters.dateTo;
+}
 
 function initCloud(){
   if(window.supabase && SUPABASE_URL.indexOf('VOTRE_SUPABASE') === -1){
@@ -593,6 +635,37 @@ function applyCachedThumbnails(vehicle, containerEl){
 
 function genId(prefix){
   return (prefix || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+}
+
+function debounce(fn, delay){
+  var timer = null;
+  return function(){
+    var args = arguments;
+    clearTimeout(timer);
+    timer = setTimeout(function(){ fn.apply(null, args); }, delay);
+  };
+}
+
+// renderContent() reconstruit tout le DOM à chaque appel — sans ça, taper dans un
+// champ de filtre ferait perdre le focus à chaque caractère. On mémorise l'élément
+// actif et la position du curseur, puis on les restaure après le nouveau rendu.
+function rerenderPreservingFocus(){
+  var active = document.activeElement;
+  var activeId = active && active.id;
+  var selStart = (active && typeof active.selectionStart === 'number') ? active.selectionStart : null;
+  var selEnd = (active && typeof active.selectionEnd === 'number') ? active.selectionEnd : null;
+
+  renderContent();
+
+  if(activeId){
+    var el = document.getElementById(activeId);
+    if(el){
+      el.focus();
+      if(selStart !== null && el.setSelectionRange){
+        try { el.setSelectionRange(selStart, selEnd); } catch(e){}
+      }
+    }
+  }
 }
 
 function fmtKm(km){
@@ -1446,6 +1519,11 @@ function renderContent(){
   }
 
   // Section 2 : Historique
+  if(historyFiltersVehicleId !== activeVehicleId){
+    historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
+    historyFiltersVehicleId = activeVehicleId;
+  }
+
   html += '<section>';
   html += '<h2 class="section-title"><span>Historique complet (' + entries.length + ')</span>';
   html += '<span class="export-actions">';
@@ -1453,7 +1531,24 @@ function renderContent(){
   html += '<button class="export-btn" id="exportCsvBtn" title="Exporter en CSV">⬇ CSV</button>';
   html += '<button class="export-btn" id="emailHistoryBtn" title="Envoyer par email">✉️ Email</button>';
   html += '</span></h2>';
-  
+
+  if(entries.length){
+    html += '<div class="hist-filters">';
+    html += '<select id="histFilterCategory">';
+    html += '<option value="all"' + (historyFilters.category === 'all' ? ' selected' : '') + '>Toutes catégories</option>';
+    HISTORY_CATEGORIES.forEach(function(c){
+      html += '<option value="' + c.id + '"' + (historyFilters.category === c.id ? ' selected' : '') + '>' + c.label + '</option>';
+    });
+    html += '</select>';
+    html += '<input type="text" id="histFilterGarage" placeholder="Garage" value="' + escapeHtml(historyFilters.garage) + '">';
+    html += '<input type="text" id="histFilterSearch" placeholder="🔍 Recherche (type, notes...)" value="' + escapeHtml(historyFilters.search) + '">';
+    html += '<input type="date" id="histFilterDateFrom" title="Du" value="' + historyFilters.dateFrom + '">';
+    html += '<input type="date" id="histFilterDateTo" title="Au" value="' + historyFilters.dateTo + '">';
+    html += '<label class="hist-filter-check"><input type="checkbox" id="histFilterInvoice"' + (historyFilters.invoiceOnly ? ' checked' : '') + '> 📎 Avec facture</label>';
+    if(hasActiveHistoryFilters()) html += '<button type="button" class="export-btn" id="histFilterReset">✕ Réinitialiser</button>';
+    html += '</div>';
+  }
+
   if(!entries.length){
     html += '<div class="empty-state">Aucune intervention enregistrée pour ce véhicule.</div>';
   } else {
@@ -1461,6 +1556,22 @@ function renderContent(){
       if(a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.km || 0) - (a.km || 0);
     });
+
+    var filteredEntries = sortedEntries.filter(function(entry){
+      var typeObjF = state.types.filter(function(t){ return t.id === entry.typeId; })[0];
+      var labelF = typeObjF ? typeObjF.label : entry.typeId;
+      var categoryF = typeObjF ? (typeObjF.category || 'autre') : 'autre';
+      return matchesHistoryFilters(entry, labelF, categoryF);
+    });
+
+    if(hasActiveHistoryFilters()){
+      html = html.replace('Historique complet (' + entries.length + ')', 'Historique (' + filteredEntries.length + ' sur ' + entries.length + ')');
+    }
+
+    if(!filteredEntries.length){
+      html += '<div class="empty-state">Aucune intervention ne correspond à ces filtres.</div>';
+    }
+    sortedEntries = filteredEntries;
 
     sortedEntries.forEach(function(entry){
       var typeObj = state.types.filter(function(t){ return t.id === entry.typeId; })[0];
@@ -1561,6 +1672,30 @@ function renderContent(){
 
   var emailHistoryBtn = document.getElementById('emailHistoryBtn');
   if(emailHistoryBtn) emailHistoryBtn.onclick = function(){ openEmailExportModal(activeVehicleId); };
+
+  var histFilterCategory = document.getElementById('histFilterCategory');
+  if(histFilterCategory) histFilterCategory.onchange = function(){ historyFilters.category = histFilterCategory.value; rerenderPreservingFocus(); };
+
+  var histFilterGarage = document.getElementById('histFilterGarage');
+  if(histFilterGarage) histFilterGarage.oninput = debounce(function(){ historyFilters.garage = histFilterGarage.value; rerenderPreservingFocus(); }, 300);
+
+  var histFilterSearch = document.getElementById('histFilterSearch');
+  if(histFilterSearch) histFilterSearch.oninput = debounce(function(){ historyFilters.search = histFilterSearch.value; rerenderPreservingFocus(); }, 300);
+
+  var histFilterDateFrom = document.getElementById('histFilterDateFrom');
+  if(histFilterDateFrom) histFilterDateFrom.onchange = function(){ historyFilters.dateFrom = histFilterDateFrom.value; rerenderPreservingFocus(); };
+
+  var histFilterDateTo = document.getElementById('histFilterDateTo');
+  if(histFilterDateTo) histFilterDateTo.onchange = function(){ historyFilters.dateTo = histFilterDateTo.value; rerenderPreservingFocus(); };
+
+  var histFilterInvoice = document.getElementById('histFilterInvoice');
+  if(histFilterInvoice) histFilterInvoice.onchange = function(){ historyFilters.invoiceOnly = histFilterInvoice.checked; rerenderPreservingFocus(); };
+
+  var histFilterReset = document.getElementById('histFilterReset');
+  if(histFilterReset) histFilterReset.onclick = function(){
+    historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
+    renderContent();
+  };
 
   var addDocBtn = document.getElementById('addDocBtn');
   var docFileInput = document.getElementById('docFileInput');
@@ -1805,6 +1940,7 @@ function openEntryModal(entryId){
   var showCtInitially = entry ? (entry.typeId === 'ct') : false;
   var costVal = entry ? (entry.cost != null ? entry.cost : '') : '';
   var costLabel = entry ? 'Coût (€)' : 'Coût total (€) — optionnel, appliqué à toutes les interventions sélectionnées';
+  var garageVal = entry ? (entry.garage || '') : '';
 
   var invoiceCurrentHtml = '';
   if(entry && entry.invoiceDoc){
@@ -1822,11 +1958,12 @@ function openEntryModal(entryId){
     '</div>' +
     '<div class="row2">' +
       '<div class="field"><label>' + costLabel + '</label><input type="number" step="0.01" min="0" id="f-cost" value="' + costVal + '" placeholder="—"></div>' +
-      '<div class="field"><label>Facture (PDF/photo)</label>' + invoiceCurrentHtml +
-        '<button type="button" class="export-btn" id="invoiceFileBtn">📎 Joindre une facture</button>' +
-        '<span id="invoiceFileName" class="field-hint" style="display:block; margin-top:4px;"></span>' +
-        '<input type="file" id="invoiceFileInput" style="display:none;" accept="image/*,application/pdf">' +
-      '</div>' +
+      '<div class="field"><label>Garage</label><input type="text" id="f-garage" value="' + escapeHtml(garageVal) + '" placeholder="Ex : Feu Vert, Norauto, moi-même..."></div>' +
+    '</div>' +
+    '<div class="field"><label>Facture (PDF/photo)</label>' + invoiceCurrentHtml +
+      '<button type="button" class="export-btn" id="invoiceFileBtn">📎 Joindre une facture</button>' +
+      '<span id="invoiceFileName" class="field-hint" style="display:block; margin-top:4px;"></span>' +
+      '<input type="file" id="invoiceFileInput" style="display:none;" accept="image/*,application/pdf">' +
     '</div>' +
     '<div class="field"><label>Notes / Observations' + (entry ? '' : ' <span class="field-hint" style="display:inline;">(appliquées à toutes les interventions sélectionnées, sinon la référence de chaque type est utilisée)</span>') + '</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
     '<div id="ctSectionWrap" style="display:' + (showCtInitially ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
@@ -1911,6 +2048,7 @@ async function saveEntry(){
   var sharedNotes = document.getElementById('f-notes').value.trim();
   var costInput = document.getElementById('f-cost').value;
   var cost = costInput === '' ? null : parseFloat(costInput);
+  var garage = document.getElementById('f-garage').value.trim();
 
   if(!date){ await showAlert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
@@ -1970,6 +2108,7 @@ async function saveEntry(){
         list[i].km = km;
         list[i].notes = sharedNotes;
         list[i].cost = cost;
+        list[i].garage = garage || null;
         list[i].updatedAt = now;
         if(ctData) list[i].ct = ctData; else delete list[i].ct;
 
@@ -2001,6 +2140,7 @@ async function saveEntry(){
         km: km,
         notes: notesForThis,
         cost: cost,
+        garage: garage || null,
         batchId: batchId,
         documents: [],
         createdAt: now,
@@ -2293,9 +2433,13 @@ function renderTypesManagerModal(){
   var rows = state.types.map(function(t){
     var reminderKmVal = (t.reminderKm != null) ? t.reminderKm : '';
     var reminderDaysVal = (t.reminderDays != null) ? t.reminderDays : '';
+    var catOptions = HISTORY_CATEGORIES.map(function(c){
+      return '<option value="' + c.id + '"' + ((t.category || 'autre') === c.id ? ' selected' : '') + '>' + c.label + '</option>';
+    }).join('');
     return '<div class="tm-type-row">' +
       '<div class="tm-type-head">' +
         '<input type="text" class="tm-type-name" data-type="' + t.id + '" value="' + escapeHtml(t.label) + '">' +
+        '<select class="tm-type-category" data-type="' + t.id + '">' + catOptions + '</select>' +
         '<button class="trash-btn tm-type-delete" data-type="' + t.id + '" title="Supprimer ce type pour tous les véhicules" aria-label="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
       '</div>' +
       '<div class="tm-reminder-row">' +
@@ -2313,7 +2457,9 @@ function renderTypesManagerModal(){
     '<div id="tmTypesList">' + rows + '</div>' +
     '<hr class="hr">' +
     '<div class="field"><label>Nouveau type</label>' +
-      '<div class="add-type-row"><input type="text" id="tmNewTypeName" placeholder="Ex : Recharge Clim"></div>' +
+      '<div class="add-type-row"><input type="text" id="tmNewTypeName" placeholder="Ex : Recharge Clim">' +
+        '<select id="tmNewTypeCategory">' + HISTORY_CATEGORIES.map(function(c){ return '<option value="' + c.id + '">' + c.label + '</option>'; }).join('') + '</select>' +
+      '</div>' +
       '<div class="tm-vehicle-list" id="tmNewTypeVehicles" style="margin-top:8px;">' + vehicleChecklist(null, 'tm-new-vehicle-toggle') + '</div>' +
       '<button type="button" class="ct-add-defect-btn" id="tmAddTypeBtn" style="margin-top:10px;">+ Ajouter ce type</button>' +
     '</div>' +
@@ -2338,6 +2484,17 @@ function renderTypesManagerModal(){
         await persist();
         renderContent();
       }
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.tm-type-category'), function(sel){
+    sel.onchange = async function(){
+      var id = sel.getAttribute('data-type');
+      var t = state.types.filter(function(x){ return x.id === id; })[0];
+      if(!t) return;
+      t.category = sel.value;
+      await persist();
+      renderContent();
     };
   });
 
@@ -2393,7 +2550,8 @@ function renderTypesManagerModal(){
       await showAlert('Un type avec un nom trop proche existe déjà.');
       return;
     }
-    state.types.push({ id: id, label: name, km: null, months: null });
+    var categorySelect = document.getElementById('tmNewTypeCategory');
+    state.types.push({ id: id, label: name, km: null, months: null, category: categorySelect ? categorySelect.value : 'autre' });
 
     var checkedVehicles = Array.prototype.filter.call(modal.querySelectorAll('.tm-new-vehicle-toggle'), function(cb){ return cb.checked; })
       .map(function(cb){ return cb.getAttribute('data-vehicle'); });
