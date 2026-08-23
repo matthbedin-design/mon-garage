@@ -271,7 +271,7 @@
 
   <nav class="tabs" id="tabsNav"></nav>
 
-  <main id="content" role="tabpanel">>
+  <main id="content" role="tabpanel">
     <div class="loading">Chargement des données...</div>
   </main>
 </div>
@@ -409,7 +409,10 @@ function slugify(str){
 }
 
 // ---- Gestion des fichiers joints (documents) ----
-var MAX_DOC_BYTES = 1.5 * 1024 * 1024; // 1.5 Mo après compression/lecture, pour rester raisonnable côté JSON stocké
+// Les documents partent dans le bucket Supabase Storage (pas dans le JSON de state),
+// donc ces limites servent juste à garder des tailles raisonnables à l'upload/l'affichage.
+var MAX_IMAGE_BYTES = 1.5 * 1024 * 1024;  // cible après compression (qualité d'aperçu suffisante)
+var MAX_DOC_BYTES = 10 * 1024 * 1024;     // 10 Mo pour les PDF (ex : carnet d'entretien scanné multi-pages)
 
 // Redimensionne et compresse une image côté client (limite la taille du base64 stocké)
 function compressImage(file, maxDim, quality){
@@ -454,10 +457,10 @@ async function prepareDocForStorage(file){
   if(isImage){
     // Compression systématique pour les images : limite la dimension et la taille finale
     var dataUrl = await compressImage(file, 1600, 0.75);
-    if(dataUrl.length > MAX_DOC_BYTES){
+    if(dataUrl.length > MAX_IMAGE_BYTES){
       dataUrl = await compressImage(file, 1000, 0.6);
     }
-    if(dataUrl.length > MAX_DOC_BYTES){
+    if(dataUrl.length > MAX_IMAGE_BYTES){
       await showAlert('Cette image reste trop volumineuse même après compression. Merci d\'en choisir une autre.');
       return null;
     }
