@@ -48,6 +48,16 @@
   .icon-btn:hover{ color:var(--text); border-color:var(--accent); }
 
   .mileage-row{ display:flex; align-items:baseline; gap:8px; margin-top:14px; }
+  .vehicle-fiche{ font-size:11.5px; color:var(--text-muted); margin-top:6px; line-height:1.5; }
+  .link-btn{ background:none; border:none; color:var(--yellow); font-size:11.5px; cursor:pointer; padding:0; text-decoration:underline; }
+  .invoice-current{ font-size:12px; color:var(--text); margin-bottom:6px; }
+  .cost-stats-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; margin-bottom:10px; }
+  .cost-stat{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:center; }
+  .cost-stat-value{ font-family:'Oswald',sans-serif; font-size:19px; font-weight:600; color:var(--yellow); }
+  .cost-stat-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px; text-transform:uppercase; letter-spacing:0.05em; }
+  .cost-by-year{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px 14px; }
+  .cost-year-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .cost-year-row:last-child{ border-bottom:none; }
   .mileage-input{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; border-radius:8px; padding:4px 10px; width:150px; }
   .mileage-input:focus{ outline:none; border-color:var(--accent); }
   .mileage-unit{ font-family:'JetBrains Mono',monospace; color:var(--text-muted); font-size:13px; }
@@ -499,6 +509,18 @@ async function uploadDocToStorage(dataUrl, mime, originalName, vehicleId){
   return path;
 }
 
+// Upload d'une facture liée à une (ou plusieurs, si facture partagée) intervention(s).
+// keyId identifie la facture (id de l'intervention seule, ou id de lot pour une saisie
+// multi-types) — permet de retrouver/supprimer le bon fichier sans ambiguïté.
+async function uploadEntryInvoice(dataUrl, mime, originalName, vehicleId, keyId){
+  var blob = dataUrlToBlob(dataUrl);
+  var ext = (originalName.split('.').pop() || 'bin').toLowerCase();
+  var path = currentUser.id + '/' + vehicleId + '/invoices/' + keyId + '.' + ext;
+  var res = await sb.storage.from(DOCS_BUCKET).upload(path, blob, { contentType: mime, upsert: true });
+  if(res.error) throw res.error;
+  return path;
+}
+
 async function deleteDocFromStorage(path){
   if(!path) return;
   try { await sb.storage.from(DOCS_BUCKET).remove([path]); }
@@ -578,6 +600,52 @@ function fmtKm(km){
   return km.toLocaleString('fr-FR') + ' km';
 }
 
+function fmtEuro(n){
+  if(n == null || isNaN(n)) return '—';
+  return n.toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + ' €';
+}
+
+// Calcule les statistiques de coûts d'un véhicule à partir de ses interventions,
+// en ne comptant qu'une seule fois les factures partagées entre plusieurs lignes (batchId).
+function computeCostStats(entries){
+  var seenBatch = {};
+  var uniqueCosts = []; // { cost, date, km }
+
+  entries.forEach(function(e){
+    if(e.cost == null) return;
+    if(e.batchId){
+      if(seenBatch[e.batchId]) return; // déjà compté via une autre ligne du même lot
+      seenBatch[e.batchId] = true;
+    }
+    uniqueCosts.push({ cost: e.cost, date: e.date, km: e.km });
+  });
+
+  var total = uniqueCosts.reduce(function(sum, c){ return sum + c.cost; }, 0);
+  var hasAny = uniqueCosts.length > 0;
+
+  var perKm = null;
+  if(hasAny){
+    var kms = uniqueCosts.map(function(c){ return c.km; }).filter(function(k){ return k != null; });
+    if(kms.length >= 2){
+      var span = Math.max.apply(null, kms) - Math.min.apply(null, kms);
+      if(span > 0) perKm = total / span;
+    }
+  }
+
+  var thisYear = new Date().getFullYear();
+  var byYearMap = {};
+  uniqueCosts.forEach(function(c){
+    var y = c.date ? new Date(c.date).getFullYear() : thisYear;
+    byYearMap[y] = (byYearMap[y] || 0) + c.cost;
+  });
+  var byYear = Object.keys(byYearMap).sort(function(a,b){ return b - a; }).map(function(y){
+    return { year: y, total: byYearMap[y] };
+  });
+  var currentYear = byYearMap[thisYear] != null ? byYearMap[thisYear] : null;
+
+  return { hasAny: hasAny, total: total, perKm: perKm, currentYear: currentYear, byYear: byYear };
+}
+
 function fmtDate(dStr){
   if(!dStr) return '—';
   var parts = dStr.split('-');
@@ -609,8 +677,14 @@ function exportHistoryCSV(vehicleId){
 
   // Point-virgule : s'ouvre correctement dans Excel FR sans réglage supplémentaire.
   var now = new Date();
+  var costStats = computeCostStats(entries);
   var exportStamp = 'Export généré le ' + now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) + ' — ' + v.name + ' (' + fmtKm(v.mileage) + ')';
-  var rows = [[exportStamp], [], ['Date', 'Type d\'intervention', 'Kilométrage', 'Notes', 'Résultat CT', 'Défauts relevés', 'Contre-visite']];
+  var rows = [[exportStamp]];
+  if(costStats.hasAny){
+    rows.push(['Total dépensé', fmtEuro(costStats.total)]);
+    if(costStats.perKm != null) rows.push(['Coût moyen au km', fmtEuro(costStats.perKm)]);
+  }
+  rows.push([], ['Date', 'Type d\'intervention', 'Kilométrage', 'Coût (€)', 'Facture', 'Notes', 'Résultat CT', 'Défauts relevés', 'Contre-visite']);
   entries.forEach(function(e){
     var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
     var label = typeObj ? typeObj.label : e.typeId;
@@ -632,7 +706,10 @@ function exportHistoryCSV(vehicleId){
       }
     }
 
-    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', e.notes || '', ctResult, ctDefects, ctCounterVisit]);
+    var costStr = e.cost != null ? e.cost.toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + (e.batchId ? ' (facture partagée)' : '') : '';
+    var invoiceStr = e.invoiceDoc ? e.invoiceDoc.name : '';
+
+    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', costStr, invoiceStr, e.notes || '', ctResult, ctDefects, ctCounterVisit]);
   });
 
   var csv = rows.map(function(row){ return row.map(csvEscape).join(';'); }).join('\r\n');
@@ -744,7 +821,9 @@ function makeVehicle(name, color, enabledTypes){
     mileage: 0,
     documents: [],
     enabledTypes: enabledTypes || DEFAULT_TYPES.map(function(t){ return t.id; }),
-    intervals: {}
+    intervals: {},
+    // Fiche véhicule (facultatif, éditable dans les réglages)
+    brand: '', model: '', year: '', vin: '', fuel: '', firstRegDate: '', insurance: ''
   };
 }
 
@@ -1258,6 +1337,18 @@ function renderContent(){
   html += '<span class="mileage-unit">km parcourus</span>';
   html += '</div>';
 
+  // Fiche véhicule (affichée seulement si au moins un champ est renseigné)
+  var fiche = [];
+  if(v.brand || v.model) fiche.push([v.brand, v.model].filter(Boolean).join(' '));
+  if(v.year) fiche.push(v.year);
+  if(v.fuel) fiche.push(v.fuel);
+  if(v.vin) fiche.push('VIN ' + v.vin);
+  if(v.firstRegDate) fiche.push('Mise en circ. ' + fmtDate(v.firstRegDate));
+  if(v.insurance) fiche.push('🛡️ ' + v.insurance);
+  if(fiche.length){
+    html += '<div class="vehicle-fiche">' + fiche.map(escapeHtml).join(' · ') + '</div>';
+  }
+
   // Documents attachés au véhicule
   html += '<div class="doc-section">';
   html += '<div class="doc-section-label">Documents (carte grise, assurance...)</div>';
@@ -1330,6 +1421,30 @@ function renderContent(){
   }
   html += '</section>';
 
+  // Section 1bis : Coûts d'entretien (déduplication des factures partagées par batchId)
+  var costStats = computeCostStats(entries);
+  if(costStats.hasAny){
+    html += '<section>';
+    html += '<h2 class="section-title"><span>Coûts d\'entretien</span></h2>';
+    html += '<div class="cost-stats-grid">';
+    html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(costStats.total) + '</div><div class="cost-stat-label">Total dépensé</div></div>';
+    if(costStats.perKm != null){
+      html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(costStats.perKm) + '</div><div class="cost-stat-label">par km parcouru</div></div>';
+    }
+    if(costStats.currentYear != null){
+      html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(costStats.currentYear) + '</div><div class="cost-stat-label">Cette année (' + new Date().getFullYear() + ')</div></div>';
+    }
+    html += '</div>';
+    if(costStats.byYear.length > 1){
+      html += '<div class="cost-by-year">';
+      costStats.byYear.forEach(function(y){
+        html += '<div class="cost-year-row"><span>' + y.year + '</span><span>' + fmtEuro(y.total) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    html += '</section>';
+  }
+
   // Section 2 : Historique
   html += '<section>';
   html += '<h2 class="section-title"><span>Historique complet (' + entries.length + ')</span>';
@@ -1377,8 +1492,12 @@ function renderContent(){
           }
         }
       }
+      if(entry.invoiceDoc){
+        html += '<div class="ct-defects-summary">📎 ' + escapeHtml(entry.invoiceDoc.name) + (entry.batchId ? ' (facture partagée)' : '') + '</div>';
+      }
       html += '</div>';
       html += '<div class="history-meta">';
+      if(entry.cost != null) html += '<div class="km">' + entry.cost.toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + ' €</div>';
       html += '<div class="km">' + fmtKm(entry.km) + '</div>';
       html += '<div>' + fmtDate(entry.date) + '</div>';
       html += '</div>';
@@ -1644,8 +1763,13 @@ function collectCtData(){
   return { result: result, defects: defects, counterVisit: counterVisit };
 }
 
+var pendingInvoiceFile = null;   // File sélectionné mais pas encore uploadé (upload différé à l'enregistrement)
+var removeInvoiceRequested = false;
+
 function openEntryModal(entryId){
   editingEntryId = entryId;
+  pendingInvoiceFile = null;
+  removeInvoiceRequested = false;
   var v = state.vehicles[activeVehicleId];
   if(!v) return;
 
@@ -1679,6 +1803,15 @@ function openEntryModal(entryId){
   var notesVal = entry ? (entry.notes || '') : '';
 
   var showCtInitially = entry ? (entry.typeId === 'ct') : false;
+  var costVal = entry ? (entry.cost != null ? entry.cost : '') : '';
+  var costLabel = entry ? 'Coût (€)' : 'Coût total (€) — optionnel, appliqué à toutes les interventions sélectionnées';
+
+  var invoiceCurrentHtml = '';
+  if(entry && entry.invoiceDoc){
+    invoiceCurrentHtml = '<div class="invoice-current" id="invoiceCurrentChip">📎 ' + escapeHtml(entry.invoiceDoc.name) +
+      ' <button type="button" class="link-btn" id="viewInvoiceBtn">Voir</button>' +
+      ' <button type="button" class="link-btn" id="removeInvoiceBtn">Retirer</button></div>';
+  }
 
   modal.innerHTML =
     '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
@@ -1686,6 +1819,14 @@ function openEntryModal(entryId){
     '<div class="row2">' +
       '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
       '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
+    '</div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>' + costLabel + '</label><input type="number" step="0.01" min="0" id="f-cost" value="' + costVal + '" placeholder="—"></div>' +
+      '<div class="field"><label>Facture (PDF/photo)</label>' + invoiceCurrentHtml +
+        '<button type="button" class="export-btn" id="invoiceFileBtn">📎 Joindre une facture</button>' +
+        '<span id="invoiceFileName" class="field-hint" style="display:block; margin-top:4px;"></span>' +
+        '<input type="file" id="invoiceFileInput" style="display:none;" accept="image/*,application/pdf">' +
+      '</div>' +
     '</div>' +
     '<div class="field"><label>Notes / Observations' + (entry ? '' : ' <span class="field-hint" style="display:inline;">(appliquées à toutes les interventions sélectionnées, sinon la référence de chaque type est utilisée)</span>') + '</label><textarea id="f-notes" placeholder="Référence pièces, garage, remarques...">' + escapeHtml(notesVal) + '</textarea></div>' +
     '<div id="ctSectionWrap" style="display:' + (showCtInitially ? 'block' : 'none') + ';">' + renderCtSection(entry) + '</div>' +
@@ -1700,6 +1841,35 @@ function openEntryModal(entryId){
   document.getElementById('cancelBtn').onclick = closeModal;
   document.getElementById('saveBtn').onclick = saveEntry;
   if(entry) document.getElementById('deleteBtn').onclick = function(){ deleteEntry(entry.id); };
+
+  var invoiceFileBtn = document.getElementById('invoiceFileBtn');
+  var invoiceFileInput = document.getElementById('invoiceFileInput');
+  if(invoiceFileBtn && invoiceFileInput){
+    invoiceFileBtn.onclick = function(){ invoiceFileInput.click(); };
+    invoiceFileInput.onchange = function(){
+      var file = invoiceFileInput.files[0];
+      if(!file) return;
+      pendingInvoiceFile = file;
+      removeInvoiceRequested = false;
+      var nameEl = document.getElementById('invoiceFileName');
+      if(nameEl) nameEl.textContent = 'Sera jointe à l\'enregistrement : ' + file.name;
+      var chip = document.getElementById('invoiceCurrentChip');
+      if(chip) chip.style.display = 'none';
+    };
+  }
+  var viewInvoiceBtn = document.getElementById('viewInvoiceBtn');
+  if(viewInvoiceBtn && entry && entry.invoiceDoc) viewInvoiceBtn.onclick = function(){ openStorageDoc(entry.invoiceDoc.path); };
+  var removeInvoiceBtn = document.getElementById('removeInvoiceBtn');
+  if(removeInvoiceBtn){
+    removeInvoiceBtn.onclick = function(){
+      removeInvoiceRequested = true;
+      pendingInvoiceFile = null;
+      var chip = document.getElementById('invoiceCurrentChip');
+      if(chip) chip.style.display = 'none';
+      var nameEl = document.getElementById('invoiceFileName');
+      if(nameEl) nameEl.textContent = 'La facture sera retirée à l\'enregistrement.';
+    };
+  }
 
   bindCtSectionEvents();
 
@@ -1739,9 +1909,12 @@ async function saveEntry(){
   var date = document.getElementById('f-date').value;
   var km = parseInt(document.getElementById('f-km').value || '0', 10);
   var sharedNotes = document.getElementById('f-notes').value.trim();
+  var costInput = document.getElementById('f-cost').value;
+  var cost = costInput === '' ? null : parseFloat(costInput);
 
   if(!date){ await showAlert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
+  if(cost !== null && (isNaN(cost) || cost < 0)){ await showAlert('Le coût doit être un nombre positif.'); return; }
 
   var typeIds;
   if(editingEntryId){
@@ -1766,6 +1939,26 @@ async function saveEntry(){
   var ctData = (typeIds.indexOf('ct') > -1) ? collectCtData() : null;
   var list = state.entries[activeVehicleId] || [];
 
+  // Upload de la facture (différé jusqu'ici pour connaître l'id de l'intervention/du lot)
+  var saveBtn = document.getElementById('saveBtn');
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Enregistrement…'; }
+
+  var invoiceDoc = null;
+  var invoiceKeyId = editingEntryId || genId('batch');
+  try {
+    if(pendingInvoiceFile){
+      var dataUrl = await prepareDocForStorage(pendingInvoiceFile);
+      if(dataUrl){
+        var storedType = (pendingInvoiceFile.type && pendingInvoiceFile.type.indexOf('image/') === 0) ? 'image/jpeg' : pendingInvoiceFile.type;
+        var path = await uploadEntryInvoice(dataUrl, storedType, pendingInvoiceFile.name, activeVehicleId, invoiceKeyId);
+        invoiceDoc = { name: pendingInvoiceFile.name, type: storedType, path: path };
+      }
+    }
+  } catch(e){
+    console.error('Erreur upload facture:', e);
+    await showAlert('Impossible de joindre la facture, l\'intervention sera quand même enregistrée.');
+  }
+
   if(editingEntryId){
     var typeId = typeIds[0];
     var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
@@ -1776,13 +1969,22 @@ async function saveEntry(){
         list[i].date = date;
         list[i].km = km;
         list[i].notes = sharedNotes;
+        list[i].cost = cost;
         list[i].updatedAt = now;
         if(ctData) list[i].ct = ctData; else delete list[i].ct;
+
+        if(invoiceDoc){
+          list[i].invoiceDoc = invoiceDoc;
+        } else if(removeInvoiceRequested && list[i].invoiceDoc){
+          await deleteInvoiceIfUnshared(list[i].invoiceDoc.path, activeVehicleId, editingEntryId);
+          delete list[i].invoiceDoc;
+        }
         break;
       }
     }
     logEvent(activeVehicleId, 'Intervention modifiée : ' + label + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   } else {
+    var batchId = (typeIds.length > 1) ? invoiceKeyId : null;
     var createdLabels = [];
     typeIds.forEach(function(tId){
       var tObj = state.types.filter(function(t){ return t.id === tId; })[0];
@@ -1798,11 +2000,14 @@ async function saveEntry(){
         date: date,
         km: km,
         notes: notesForThis,
+        cost: cost,
+        batchId: batchId,
         documents: [],
         createdAt: now,
         updatedAt: now
       };
       if(tId === 'ct' && ctData) newEntry.ct = ctData;
+      if(invoiceDoc) newEntry.invoiceDoc = invoiceDoc;
       list.push(newEntry);
       createdLabels.push(tLabel);
     });
@@ -1811,9 +2016,21 @@ async function saveEntry(){
 
   if(v && km > v.mileage) v.mileage = km;
 
+  pendingInvoiceFile = null;
+  removeInvoiceRequested = false;
+
   await persist();
   closeModal();
   renderContent();
+}
+
+// Supprime le fichier de facture en Storage seulement si plus aucune autre
+// intervention de ce véhicule ne le référence (cas d'une facture partagée).
+async function deleteInvoiceIfUnshared(path, vehicleId, excludeEntryId){
+  if(!path) return;
+  var list = state.entries[vehicleId] || [];
+  var stillUsed = list.some(function(e){ return e.id !== excludeEntryId && e.invoiceDoc && e.invoiceDoc.path === path; });
+  if(!stillUsed) await deleteDocFromStorage(path);
 }
 
 async function deleteEntry(id){
@@ -1826,6 +2043,7 @@ async function deleteEntry(id){
     var typeObj = state.types.filter(function(t){ return t.id === entry.typeId; })[0];
     var label = typeObj ? typeObj.label : entry.typeId;
     logEvent(activeVehicleId, 'Intervention supprimée : ' + label);
+    if(entry.invoiceDoc) await deleteInvoiceIfUnshared(entry.invoiceDoc.path, activeVehicleId, id);
   }
 
   state.entries[activeVehicleId] = list.filter(function(e){ return e.id !== id; });
@@ -1850,6 +2068,21 @@ function collectSettingsFormData(v, modal, swatchWrap){
 
   var selected = swatchWrap.querySelector('.swatch.selected');
   if(selected) v.color = selected.getAttribute('data-color');
+
+  var brandEl = document.getElementById('s-brand');
+  if(brandEl) v.brand = brandEl.value.trim();
+  var modelEl = document.getElementById('s-model');
+  if(modelEl) v.model = modelEl.value.trim();
+  var yearEl = document.getElementById('s-year');
+  if(yearEl) v.year = yearEl.value.trim();
+  var fuelEl = document.getElementById('s-fuel');
+  if(fuelEl) v.fuel = fuelEl.value;
+  var vinEl = document.getElementById('s-vin');
+  if(vinEl) v.vin = vinEl.value.trim().toUpperCase();
+  var firstRegEl = document.getElementById('s-firstreg');
+  if(firstRegEl) v.firstRegDate = firstRegEl.value;
+  var insuranceEl = document.getElementById('s-insurance');
+  if(insuranceEl) v.insurance = insuranceEl.value.trim();
 
   // Note : l'activation/désactivation des types se fait désormais uniquement
   // via "Gérer les types pour plusieurs véhicules" (modale globale) — cette
@@ -1911,6 +2144,26 @@ function openSettingsModal(){
     '<h3>Réglages du véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Nom du véhicule</label><input type="text" id="s-name" value="' + escapeHtml(v.name) + '"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="s-swatches"></div></div>' +
+    '<hr class="hr">' +
+    '<div class="field-hint" style="margin-bottom:8px;">Fiche véhicule (facultatif)</div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Marque</label><input type="text" id="s-brand" value="' + escapeHtml(v.brand || '') + '" placeholder="Ex : Renault"></div>' +
+      '<div class="field"><label>Modèle</label><input type="text" id="s-model" value="' + escapeHtml(v.model || '') + '" placeholder="Ex : Kangoo"></div>' +
+    '</div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Année</label><input type="number" id="s-year" value="' + escapeHtml(v.year || '') + '" placeholder="Ex : 2019"></div>' +
+      '<div class="field"><label>Carburant</label><select id="s-fuel">' +
+        '<option value=""' + (!v.fuel ? ' selected' : '') + '>—</option>' +
+        ['Essence','Diesel','Hybride','Électrique','GPL','Autre'].map(function(f){
+          return '<option value="' + f + '"' + (v.fuel === f ? ' selected' : '') + '>' + f + '</option>';
+        }).join('') +
+      '</select></div>' +
+    '</div>' +
+    '<div class="field"><label>VIN (numéro de châssis)</label><input type="text" id="s-vin" value="' + escapeHtml(v.vin || '') + '" placeholder="17 caractères"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Date de mise en circulation</label><input type="date" id="s-firstreg" value="' + escapeHtml(v.firstRegDate || '') + '"></div>' +
+      '<div class="field"><label>Assurance</label><input type="text" id="s-insurance" value="' + escapeHtml(v.insurance || '') + '" placeholder="Assureur + n° police"></div>' +
+    '</div>' +
     '<hr class="hr">' +
     '<div class="field"><label>Types d\'intervention suivis pour ce véhicule</label>' + rows +
       '<div class="add-type-row">' +
