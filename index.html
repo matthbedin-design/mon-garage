@@ -275,7 +275,7 @@
   }
 
   #dossierPrintArea{ display:none; }
-  body.dossier-mode > .app, body.dossier-mode > .modal-overlay, body.dossier-mode > .confirm-overlay { display:none !important; }
+  body.dossier-mode > .app, body.dossier-mode > .modal-overlay, body.dossier-mode > .confirm-overlay, body.dossier-mode > .fab { display:none !important; }
   body.dossier-mode #dossierPrintArea{ display:block !important; max-width:720px; margin:0 auto; padding:24px; color:var(--text); }
   .dossier-cover{ text-align:center; padding:20px 0 28px; border-bottom:2px solid var(--yellow); margin-bottom:22px; }
   .dossier-cover h1{ font-family:'Oswald',sans-serif; font-size:26px; margin:0 0 6px; }
@@ -289,9 +289,11 @@
   .dossier-fiche-grid div span{ color:var(--text-muted); }
   .dossier-invoice-img{ max-width:100%; border-radius:8px; border:1px solid var(--border); margin:8px 0; }
   .dossier-actions{ text-align:center; margin-top:24px; display:flex; gap:10px; justify-content:center; }
+  .dossier-jump{ display:inline-block; text-align:center; }
   @media print {
     #dossierPrintArea{ background:#fff !important; color:#000 !important; }
     #dossierPrintArea .dossier-actions{ display:none !important; }
+    #dossierPrintArea .dossier-jump{ display:none !important; }
     #dossierPrintArea *{ color:#000 !important; }
     .dossier-ct-banner.ok{ background:#e6f4ea !important; border-color:#2e7d32 !important; }
     .dossier-ct-banner.warning{ background:#fff8e1 !important; border-color:#8a6d00 !important; }
@@ -994,22 +996,34 @@ async function generateSaleDossier(vehicleId, options){
   var now = new Date();
   var nowStr = now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
 
-  var html = '<div class="dossier-cover">';
+  var html = '<div id="dossier-top"></div>';
+  html += '<div class="dossier-cover">';
   html += '<h1>' + escapeHtml(titre) + '</h1>';
   html += '<div class="dossier-sub">Dossier de vente — document généré le ' + nowStr + '</div>';
+  html += '<a href="#dossier-bottom" class="jump-link dossier-jump">↓ Aller en bas (imprimer)</a>';
   html += '</div>';
 
-  // Statut CT mis en avant (le premier critère regardé par un acheteur)
+  // Statut CT mis en avant (le premier critère regardé par un acheteur) — la date du
+  // dernier CT est plus parlante que l'échéance interne, car c'est l'obligation légale
+  // de vente (CT de moins de 6 mois) qui compte pour l'acheteur.
   var ctStatus = computeStatus(vehicleId, 'ct');
   if(ctStatus && ctStatus.last){
-    var ctClass = ctStatus.isOverdue ? 'overdue' : (ctStatus.isWarning ? 'warning' : 'ok');
-    var ctText;
-    if(ctStatus.needsCounterVisit){
-      ctText = ctStatus.isOverdue ? '❌ Contre-visite CT dépassée' : '⚠️ Contre-visite CT à prévoir dans ' + ctStatus.remainingDays + ' j';
-    } else if(ctStatus.isOverdue){
-      ctText = '❌ Contrôle technique dépassé';
+    var ctDate = ctStatus.last.date;
+    var ctResultValue = ctStatus.last.ct ? ctStatus.last.ct.result : null;
+    var ctResultLabels2 = { ok: 'Favorable', remarks: 'Favorable avec remarques', ko: 'Défavorable' };
+    var monthsSinceCt = ctDate ? (Date.now() - new Date(ctDate).getTime()) / (1000 * 60 * 60 * 24 * 30.44) : null;
+    var pendingCv = ctStatus.needsCounterVisit;
+
+    var ctClass, ctText;
+    if(pendingCv){
+      ctClass = ctStatus.isOverdue ? 'overdue' : 'warning';
+      ctText = ctStatus.isOverdue ? '❌ Contre-visite CT non régularisée' : '⚠️ Contre-visite CT en attente';
+    } else if(monthsSinceCt != null && monthsSinceCt > 6){
+      ctClass = 'overdue';
+      ctText = '⚠️ Dernier CT : ' + fmtDate(ctDate) + ' — plus de 6 mois, un nouveau CT sera nécessaire pour la vente';
     } else {
-      ctText = '✅ Prochain contrôle technique dans ' + (ctStatus.remainingDays != null ? ctStatus.remainingDays + ' j' : '—');
+      ctClass = 'ok';
+      ctText = '✅ Dernier CT : ' + fmtDate(ctDate) + (ctResultValue ? ' (' + ctResultLabels2[ctResultValue] + ')' : '') + ' — moins de 6 mois';
     }
     html += '<div class="dossier-ct-banner ' + ctClass + '">' + ctText + '</div>';
   }
@@ -1080,10 +1094,13 @@ async function generateSaleDossier(vehicleId, options){
     loadDossierInvoiceImages(filtered);
   }
 
-  var actionsHtml = '<div class="dossier-actions">' +
-    '<button class="btn btn-primary" id="dossierPrintNowBtn" style="width:auto; display:inline-block;">🖨 Imprimer / Enregistrer en PDF</button>' +
-    '<button class="btn btn-ghost" id="dossierBackBtn" style="width:auto; display:inline-block;">← Retour à l\'app</button>' +
-    '</div>';
+  var actionsHtml = '<div id="dossier-bottom">' +
+    '<div style="text-align:center; margin-bottom:10px;"><a href="#dossier-top" class="jump-link dossier-jump">↑ Remonter en haut</a></div>' +
+    '<div class="dossier-actions">' +
+      '<button class="btn btn-primary" id="dossierPrintNowBtn" style="width:auto; display:inline-block;">🖨 Imprimer / Enregistrer en PDF</button>' +
+      '<button class="btn btn-ghost" id="dossierBackBtn" style="width:auto; display:inline-block;">← Retour à l\'app</button>' +
+    '</div>' +
+  '</div>';
   area.insertAdjacentHTML('beforeend', actionsHtml);
   document.getElementById('dossierPrintNowBtn').onclick = function(){ window.print(); };
   document.getElementById('dossierBackBtn').onclick = function(){
