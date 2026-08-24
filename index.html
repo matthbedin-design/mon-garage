@@ -256,6 +256,31 @@
     .ct-badge.ko{ background:#fdecea !important; color:#b3261e !important; }
     .ct-defects-summary{ color:#444 !important; }
   }
+
+  #dossierPrintArea{ display:none; }
+  body.dossier-mode > .app, body.dossier-mode > .modal-overlay, body.dossier-mode > .confirm-overlay { display:none !important; }
+  body.dossier-mode #dossierPrintArea{ display:block !important; max-width:720px; margin:0 auto; padding:24px; color:var(--text); }
+  .dossier-cover{ text-align:center; padding:20px 0 28px; border-bottom:2px solid var(--yellow); margin-bottom:22px; }
+  .dossier-cover h1{ font-family:'Oswald',sans-serif; font-size:26px; margin:0 0 6px; }
+  .dossier-cover .dossier-sub{ color:var(--text-muted); font-size:13px; }
+  .dossier-ct-banner{ display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; border-radius:10px; margin-bottom:22px; font-family:'Oswald',sans-serif; font-size:15px; font-weight:600; }
+  .dossier-ct-banner.ok{ background:rgba(95,174,125,.15); color:var(--green); border:1px solid var(--green); }
+  .dossier-ct-banner.warning{ background:rgba(240,180,41,.15); color:var(--yellow); border:1px solid var(--yellow); }
+  .dossier-ct-banner.overdue{ background:rgba(217,83,79,.15); color:var(--red); border:1px solid var(--red); }
+  .dossier-section-title{ font-family:'Oswald',sans-serif; font-size:14px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); border-bottom:1px solid var(--border); padding-bottom:6px; margin:26px 0 12px; }
+  .dossier-fiche-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 20px; font-size:13.5px; }
+  .dossier-fiche-grid div span{ color:var(--text-muted); }
+  .dossier-invoice-img{ max-width:100%; border-radius:8px; border:1px solid var(--border); margin:8px 0; }
+  .dossier-actions{ text-align:center; margin-top:24px; display:flex; gap:10px; justify-content:center; }
+  @media print {
+    #dossierPrintArea{ background:#fff !important; color:#000 !important; }
+    #dossierPrintArea .dossier-actions{ display:none !important; }
+    #dossierPrintArea *{ color:#000 !important; }
+    .dossier-ct-banner.ok{ background:#e6f4ea !important; border-color:#2e7d32 !important; }
+    .dossier-ct-banner.warning{ background:#fff8e1 !important; border-color:#8a6d00 !important; }
+    .dossier-ct-banner.overdue{ background:#fdecea !important; border-color:#b3261e !important; }
+    .dossier-cover{ border-bottom-color:#c9971f !important; }
+  }
 </style>
 </head>
 <body>
@@ -272,6 +297,8 @@
     <div class="auth-status" id="authStatus"></div>
   </div>
 </div>
+
+<div id="dossierPrintArea"></div>
 
 <div class="app">
   <header class="topbar">
@@ -829,6 +856,207 @@ function openEmailExportModal(vehicleId){
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
   document.getElementById('sendEmailBtn').onclick = function(){ sendHistoryByEmail(vehicleId); };
+}
+
+// ---- Modale : configuration et génération du dossier de vente ----
+function openSaleDossierModal(vehicleId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var modal = document.getElementById('modal');
+
+  var catChecks = HISTORY_CATEGORIES.map(function(c){
+    return '<label class="tm-vehicle-chip"><input type="checkbox" class="dossier-cat" value="' + c.id + '" checked>' + c.label + '</label>';
+  }).join('');
+
+  modal.innerHTML =
+    '<h3>Dossier de vente <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:10px;">Choisis ce qui doit apparaître dans le document destiné à l\'acheteur.</div>' +
+    '<div class="field"><label>Catégories d\'intervention à inclure</label><div class="tm-vehicle-list">' + catChecks + '</div></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Depuis le (optionnel)</label><input type="date" id="dossier-from"></div>' +
+      '<div class="field"><label>Jusqu\'au (optionnel)</label><input type="date" id="dossier-to"></div>' +
+    '</div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-notes" checked><span class="name">Inclure les notes des interventions</span></div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-garage" checked><span class="name">Inclure le nom des garages</span></div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-costs" checked><span class="name">Inclure les coûts et le total dépensé</span></div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-invoices"><span class="name">Intégrer les images de factures (photos uniquement)</span></div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-insurance"><span class="name">Inclure les coordonnées d\'assurance</span></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
+      '<button class="btn btn-primary" id="generateDossierBtn">Générer le dossier</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('generateDossierBtn').onclick = function(){
+    var options = {
+      categories: Array.prototype.filter.call(document.querySelectorAll('.dossier-cat'), function(cb){ return cb.checked; }).map(function(cb){ return cb.value; }),
+      dateFrom: document.getElementById('dossier-from').value,
+      dateTo: document.getElementById('dossier-to').value,
+      includeNotes: document.getElementById('dossier-notes').checked,
+      includeGarage: document.getElementById('dossier-garage').checked,
+      includeCosts: document.getElementById('dossier-costs').checked,
+      includeInvoiceImages: document.getElementById('dossier-invoices').checked,
+      includeInsurance: document.getElementById('dossier-insurance').checked
+    };
+    closeModal();
+    generateSaleDossier(vehicleId, options);
+  };
+}
+
+async function generateSaleDossier(vehicleId, options){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var entries = (state.entries[vehicleId] || []).slice().sort(function(a,b){
+    if(a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.km || 0) - (b.km || 0);
+  });
+
+  var filtered = entries.filter(function(e){
+    var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
+    var category = typeObj ? (typeObj.category || 'autre') : 'autre';
+    if(options.categories.length && options.categories.indexOf(category) === -1) return false;
+    if(options.dateFrom && e.date < options.dateFrom) return false;
+    if(options.dateTo && e.date > options.dateTo) return false;
+    return true;
+  });
+
+  var titre = [v.brand, v.model].filter(Boolean).join(' ') || v.name;
+  var now = new Date();
+  var nowStr = now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+
+  var html = '<div class="dossier-cover">';
+  html += '<h1>' + escapeHtml(titre) + '</h1>';
+  html += '<div class="dossier-sub">Dossier de vente — document généré le ' + nowStr + '</div>';
+  html += '</div>';
+
+  // Statut CT mis en avant (le premier critère regardé par un acheteur)
+  var ctStatus = computeStatus(vehicleId, 'ct');
+  if(ctStatus && ctStatus.last){
+    var ctClass = ctStatus.isOverdue ? 'overdue' : (ctStatus.isWarning ? 'warning' : 'ok');
+    var ctText;
+    if(ctStatus.needsCounterVisit){
+      ctText = ctStatus.isOverdue ? '❌ Contre-visite CT dépassée' : '⚠️ Contre-visite CT à prévoir dans ' + ctStatus.remainingDays + ' j';
+    } else if(ctStatus.isOverdue){
+      ctText = '❌ Contrôle technique dépassé';
+    } else {
+      ctText = '✅ Prochain contrôle technique dans ' + (ctStatus.remainingDays != null ? ctStatus.remainingDays + ' j' : '—');
+    }
+    html += '<div class="dossier-ct-banner ' + ctClass + '">' + ctText + '</div>';
+  }
+
+  // Fiche véhicule
+  html += '<div class="dossier-section-title">Caractéristiques</div>';
+  html += '<div class="dossier-fiche-grid">';
+  html += '<div><span>Kilométrage : </span>' + fmtKm(v.mileage) + '</div>';
+  html += '<div><span>Immatriculation : </span>' + escapeHtml(v.plate || '—') + '</div>';
+  if(v.brand) html += '<div><span>Marque : </span>' + escapeHtml(v.brand) + '</div>';
+  if(v.model) html += '<div><span>Modèle : </span>' + escapeHtml(v.model) + '</div>';
+  if(v.year) html += '<div><span>Année : </span>' + escapeHtml(v.year) + '</div>';
+  if(v.fuel) html += '<div><span>Carburant : </span>' + escapeHtml(v.fuel) + '</div>';
+  if(v.vin) html += '<div><span>VIN : </span>' + escapeHtml(v.vin) + '</div>';
+  if(v.firstRegDate) html += '<div><span>Mise en circulation : </span>' + fmtDate(v.firstRegDate) + '</div>';
+  if(options.includeInsurance && v.insurance) html += '<div><span>Assurance : </span>' + escapeHtml(v.insurance) + '</div>';
+  html += '</div>';
+
+  // Coûts
+  if(options.includeCosts){
+    var costStats = computeCostStats(filtered);
+    if(costStats.hasAny){
+      html += '<div class="dossier-section-title">Entretien financier</div>';
+      html += '<div class="dossier-fiche-grid">';
+      html += '<div><span>Total dépensé (période sélectionnée) : </span>' + fmtEuro(costStats.total) + '</div>';
+      if(costStats.perKm != null) html += '<div><span>Coût moyen au km : </span>' + fmtEuro(costStats.perKm) + '</div>';
+      html += '</div>';
+    }
+  }
+
+  // Historique filtré
+  html += '<div class="dossier-section-title">Historique d\'entretien (' + filtered.length + ' intervention' + (filtered.length > 1 ? 's' : '') + ')</div>';
+  if(!filtered.length){
+    html += '<div class="field-hint">Aucune intervention ne correspond aux filtres sélectionnés.</div>';
+  } else {
+    filtered.slice().reverse().forEach(function(e){
+      var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
+      var label = typeObj ? typeObj.label : e.typeId;
+      html += '<div class="history-row" style="cursor:default;">';
+      html += '<div class="history-main">';
+      html += '<div class="history-type">' + escapeHtml(label) + '</div>';
+      if(options.includeNotes && e.notes) html += '<div class="history-notes">' + escapeHtml(e.notes) + '</div>';
+      if(options.includeGarage && e.garage) html += '<div class="history-notes">🔧 ' + escapeHtml(e.garage) + '</div>';
+      if(e.ct){
+        var ctResultMap = { ok: ['✅ Favorable', 'ok'], remarks: ['⚠️ Favorable avec remarques', 'remarks'], ko: ['❌ Défavorable', 'ko'] };
+        var ctBadge = ctResultMap[e.ct.result] || ctResultMap.ok;
+        html += '<span class="ct-badge ' + ctBadge[1] + '">' + ctBadge[0] + '</span>';
+      }
+      html += '</div>';
+      html += '<div class="history-meta">';
+      if(options.includeCosts && e.cost != null) html += '<div class="km">' + fmtEuro(e.cost) + '</div>';
+      html += '<div class="km">' + fmtKm(e.km) + '</div>';
+      html += '<div>' + fmtDate(e.date) + '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+
+  var area = document.getElementById('dossierPrintArea');
+  area.innerHTML = html;
+  document.body.classList.add('dossier-mode');
+  window.scrollTo(0, 0);
+
+  // Charge les images de factures en arrière-plan si demandé (n'attend pas
+  // avant d'afficher le dossier, pour ne pas bloquer l'aperçu)
+  if(options.includeInvoiceImages){
+    loadDossierInvoiceImages(filtered);
+  }
+
+  var actionsHtml = '<div class="dossier-actions">' +
+    '<button class="btn btn-primary" id="dossierPrintNowBtn" style="width:auto; display:inline-block;">🖨 Imprimer / Enregistrer en PDF</button>' +
+    '<button class="btn btn-ghost" id="dossierBackBtn" style="width:auto; display:inline-block;">← Retour à l\'app</button>' +
+    '</div>';
+  area.insertAdjacentHTML('beforeend', actionsHtml);
+  document.getElementById('dossierPrintNowBtn').onclick = function(){ window.print(); };
+  document.getElementById('dossierBackBtn').onclick = function(){
+    document.body.classList.remove('dossier-mode');
+    area.innerHTML = '';
+  };
+}
+
+// Récupère les URLs signées des factures-images et les intègre visuellement
+// dans le dossier (les PDF ne peuvent pas s'afficher en <img>, ils restent
+// mentionnés par leur nom uniquement).
+async function loadDossierInvoiceImages(entries){
+  if(!cloudReady || !currentUser) return;
+  var imagePaths = entries
+    .filter(function(e){ return e.invoiceDoc && e.invoiceDoc.type && e.invoiceDoc.type.indexOf('image/') === 0; })
+    .map(function(e){ return e.invoiceDoc.path; });
+  if(!imagePaths.length) return;
+
+  try {
+    var res = await sb.storage.from(DOCS_BUCKET).createSignedUrls(imagePaths, 300);
+    if(res.error || !res.data) return;
+    var urlByPath = {};
+    res.data.forEach(function(item){ if(item.signedUrl) urlByPath[item.path] = item.signedUrl; });
+
+    var area = document.getElementById('dossierPrintArea');
+    if(!area) return;
+    var rows = area.querySelectorAll('.history-row');
+    var idx = 0;
+    entries.forEach(function(e){
+      var rowEl = rows[entries.length - 1 - idx]; // la liste est affichée en ordre inversé (plus récent en premier)
+      idx++;
+      if(e.invoiceDoc && urlByPath[e.invoiceDoc.path] && rowEl){
+        var img = document.createElement('img');
+        img.className = 'dossier-invoice-img';
+        img.src = urlByPath[e.invoiceDoc.path];
+        img.alt = 'Facture';
+        rowEl.querySelector('.history-main').appendChild(img);
+      }
+    });
+  } catch(e){
+    console.error('Erreur chargement images factures (dossier):', e);
+  }
 }
 
 async function sendHistoryByEmail(vehicleId){
@@ -1530,6 +1758,7 @@ function renderContent(){
   html += '<button class="export-btn" id="printBtn" title="Imprimer / Enregistrer en PDF">🖨 PDF</button>';
   html += '<button class="export-btn" id="exportCsvBtn" title="Exporter en CSV">⬇ CSV</button>';
   html += '<button class="export-btn" id="emailHistoryBtn" title="Envoyer par email">✉️ Email</button>';
+  html += '<button class="export-btn" id="saleDossierBtn" title="Générer un dossier de vente">🚗 Dossier de vente</button>';
   html += '</span></h2>';
 
   if(entries.length){
@@ -1696,6 +1925,9 @@ function renderContent(){
     historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
     renderContent();
   };
+
+  var saleDossierBtn = document.getElementById('saleDossierBtn');
+  if(saleDossierBtn) saleDossierBtn.onclick = function(){ openSaleDossierModal(activeVehicleId); };
 
   var addDocBtn = document.getElementById('addDocBtn');
   var docFileInput = document.getElementById('docFileInput');
