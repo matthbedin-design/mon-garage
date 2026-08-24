@@ -58,6 +58,13 @@
   .cost-by-year{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px 14px; }
   .cost-year-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
   .cost-year-row:last-child{ border-bottom:none; }
+  .cost-chart-controls{ display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:6px; font-size:12.5px; color:var(--text-muted); }
+  .cost-chart-btn{ width:28px; height:28px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:16px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .cost-chart-btn:hover:not(:disabled){ border-color:var(--yellow); color:var(--yellow); }
+  .cost-chart-btn:disabled{ opacity:.35; cursor:default; }
+  .cost-chart-wrap{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 4px; }
+  .cost-chart-svg{ width:100%; height:auto; display:block; }
+  .cost-chart-legend{ text-align:center; font-size:12px; color:var(--text-muted); margin-top:8px; }
   .hist-filters{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:12px; }
   .hist-filters select, .hist-filters input[type=text], .hist-filters input[type=date]{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:7px 9px; border-radius:8px; }
   .hist-filters input[type=text]{ min-width:130px; flex:1; }
@@ -262,6 +269,9 @@
     .ct-badge.remarks{ background:#fff8e1 !important; color:#8a6d00 !important; }
     .ct-badge.ko{ background:#fdecea !important; color:#b3261e !important; }
     .ct-defects-summary{ color:#444 !important; }
+    .cost-chart-svg text{ fill:#333 !important; }
+    .cost-chart-svg line{ stroke:#999 !important; }
+    .cost-chart-controls{ display:none !important; }
   }
 
   #dossierPrintArea{ display:none; }
@@ -400,6 +410,7 @@ var editingEntryId = null;
 var historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
 var historyFiltersVehicleId = null;
 var gaugesSectionCollapsed = {}; // { vehicleId: true/false } — état repliable, en mémoire seulement
+var costChartYears = {}; // { vehicleId: nombre d'années affichées dans le graphique } — défaut 10
 
 function matchesHistoryFilters(entry, typeLabel, category){
   if(historyFilters.category !== 'all' && category !== historyFilters.category) return false;
@@ -752,6 +763,55 @@ function computeCostStats(entries){
   var currentYear = byYearMap[thisYear] != null ? byYearMap[thisYear] : null;
 
   return { hasAny: hasAny, total: total, perKm: perKm, currentYear: currentYear, byYear: byYear };
+}
+
+function median(nums){
+  if(!nums.length) return null;
+  var sorted = nums.slice().sort(function(a, b){ return a - b; });
+  var mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Construit un graphique en barres SVG "maison" (pas de librairie externe) montrant
+// le coût par année sur les N années les plus récentes choisies, avec une ligne de
+// moyenne. accentColor : couleur du véhicule (cohérence visuelle avec le reste).
+function renderCostChart(byYearAll, yearsCount, accentColor){
+  // byYearAll est trié du plus récent au plus ancien (cf computeCostStats) : on
+  // prend les N premiers puis on repasse en ordre chronologique pour l'affichage.
+  var slice = byYearAll.slice(0, yearsCount).slice().reverse();
+  if(!slice.length) return { svg: '', avg: null, med: null };
+
+  var totals = slice.map(function(d){ return d.total; });
+  var avg = totals.reduce(function(s, t){ return s + t; }, 0) / totals.length;
+  var med = median(totals);
+  var maxVal = Math.max.apply(null, totals.concat([1]));
+
+  var w = 640, h = 210;
+  var pad = { top: 22, right: 14, bottom: 30, left: 14 };
+  var chartW = w - pad.left - pad.right;
+  var chartH = h - pad.top - pad.bottom;
+  var gap = 12;
+  var barW = Math.max(14, (chartW - gap * (slice.length - 1)) / slice.length);
+  var totalBarsW = slice.length * barW + (slice.length - 1) * gap;
+  var startX = pad.left + Math.max(0, (chartW - totalBarsW) / 2);
+
+  var avgY = pad.top + chartH - (avg / maxVal) * chartH;
+
+  var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="cost-chart-svg" preserveAspectRatio="xMidYMid meet">';
+  svg += '<line x1="' + pad.left + '" y1="' + avgY.toFixed(1) + '" x2="' + (w - pad.right) + '" y2="' + avgY.toFixed(1) + '" style="stroke:var(--text-muted); stroke-width:1; stroke-dasharray:4,4;" />';
+  svg += '<text x="' + (w - pad.right) + '" y="' + (avgY - 6).toFixed(1) + '" text-anchor="end" style="font-size:10px; fill:var(--text-muted); font-family:\'JetBrains Mono\',monospace;">moy. ' + Math.round(avg) + ' €</text>';
+
+  slice.forEach(function(d, i){
+    var barH = maxVal > 0 ? (d.total / maxVal) * chartH : 0;
+    var x = startX + i * (barW + gap);
+    var y = pad.top + chartH - barH;
+    svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(1, barH).toFixed(1) + '" rx="4" style="fill:' + accentColor + ';" />';
+    svg += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + Math.max(pad.top - 6, y - 6).toFixed(1) + '" text-anchor="middle" style="font-size:10.5px; fill:var(--text); font-family:\'JetBrains Mono\',monospace;">' + Math.round(d.total) + '€</text>';
+    svg += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - pad.bottom + 16).toFixed(1) + '" text-anchor="middle" style="font-size:11px; fill:var(--text-muted); font-family:\'Oswald\',sans-serif;">' + d.year + '</text>';
+  });
+
+  svg += '</svg>';
+  return { svg: svg, avg: avg, med: med };
 }
 
 function fmtDate(dStr){
@@ -1751,11 +1811,19 @@ function renderContent(){
     }
     html += '</div>';
     if(costStats.byYear.length > 1){
-      html += '<div class="cost-by-year">';
-      costStats.byYear.forEach(function(y){
-        html += '<div class="cost-year-row"><span>' + y.year + '</span><span>' + fmtEuro(y.total) + '</span></div>';
-      });
+      if(costChartYears[activeVehicleId] == null) costChartYears[activeVehicleId] = Math.min(10, costStats.byYear.length);
+      var yearsCount = Math.max(2, Math.min(costChartYears[activeVehicleId], costStats.byYear.length));
+      var chart = renderCostChart(costStats.byYear, yearsCount, v.color || 'var(--yellow)');
+
+      html += '<div class="cost-chart-controls">';
+      html += '<button type="button" class="cost-chart-btn" id="costChartMinus" ' + (yearsCount <= 2 ? 'disabled' : '') + '>−</button>';
+      html += '<span>' + yearsCount + ' dernière' + (yearsCount > 1 ? 's' : '') + ' année' + (yearsCount > 1 ? 's' : '') + '</span>';
+      html += '<button type="button" class="cost-chart-btn" id="costChartPlus" ' + (yearsCount >= costStats.byYear.length ? 'disabled' : '') + '>+</button>';
       html += '</div>';
+      html += '<div class="cost-chart-wrap">' + chart.svg + '</div>';
+      if(chart.avg != null){
+        html += '<div class="cost-chart-legend">Moyenne : ' + fmtEuro(chart.avg) + ' · Médiane : ' + fmtEuro(chart.med) + '</div>';
+      }
     }
     html += '</section>';
   }
@@ -1916,6 +1984,17 @@ function renderContent(){
   var gaugesToggle = document.getElementById('gaugesToggle');
   if(gaugesToggle) gaugesToggle.onclick = function(){
     gaugesSectionCollapsed[activeVehicleId] = !gaugesSectionCollapsed[activeVehicleId];
+    renderContent();
+  };
+
+  var costChartMinus = document.getElementById('costChartMinus');
+  if(costChartMinus) costChartMinus.onclick = function(){
+    costChartYears[activeVehicleId] = Math.max(2, (costChartYears[activeVehicleId] || 10) - 1);
+    renderContent();
+  };
+  var costChartPlus = document.getElementById('costChartPlus');
+  if(costChartPlus) costChartPlus.onclick = function(){
+    costChartYears[activeVehicleId] = (costChartYears[activeVehicleId] || 10) + 1;
     renderContent();
   };
 
