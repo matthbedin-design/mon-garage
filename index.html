@@ -84,6 +84,10 @@
 
   .gauge-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
   .gauge-ref{ font-size:11px; color:var(--text-muted); margin-top:3px; }
+  .collapsible-title{ cursor:pointer; user-select:none; }
+  .collapse-chevron{ color:var(--text-muted); font-size:12px; }
+  .jump-link{ display:inline-block; margin-top:10px; font-size:12px; color:var(--yellow); text-decoration:none; }
+  .jump-link:hover{ text-decoration:underline; }
   .gauge-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
   .gauge-label{ font-size:14px; font-weight:600; }
   .gauge-status{ font-family:'JetBrains Mono',monospace; font-size:12px; }
@@ -165,6 +169,9 @@
   .type-select-chip{ display:flex; align-items:center; gap:6px; font-size:13px; background:var(--surface-2); border:1px solid var(--border); padding:7px 12px; border-radius:20px; cursor:pointer; }
   .type-select-chip input{ accent-color:var(--yellow); width:15px; height:15px; flex:none; }
   .type-select-chip:has(input:checked){ border-color:var(--yellow); color:var(--yellow); background:rgba(240,180,41,.1); }
+  .quick-add-type-form{ display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; padding:10px; background:var(--surface-2); border-radius:9px; }
+  .quick-add-type-form input[type=text]{ flex:1; min-width:140px; background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 10px; border-radius:8px; }
+  .quick-add-type-form select{ background:var(--surface); border:1px solid var(--border); color:var(--text); font-size:12px; padding:8px 6px; border-radius:8px; }
 
   .swatches{ display:flex; gap:9px; flex-wrap:wrap; margin-top:4px; }
   .swatch{ width:32px;height:32px;border-radius:50%; border:2px solid transparent; cursor:pointer; }
@@ -392,6 +399,7 @@ var editingEntryId = null;
 // automatiquement au changement de véhicule.
 var historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
 var historyFiltersVehicleId = null;
+var gaugesSectionCollapsed = {}; // { vehicleId: true/false } — état repliable, en mémoire seulement
 
 function matchesHistoryFilters(entry, typeLabel, category){
   if(historyFilters.category !== 'all' && category !== historyFilters.category) return false;
@@ -404,7 +412,7 @@ function matchesHistoryFilters(entry, typeLabel, category){
   }
   if(historyFilters.search){
     var s = historyFilters.search.toLowerCase();
-    var haystack = (typeLabel + ' ' + (entry.notes || '') + ' ' + (entry.garage || '')).toLowerCase();
+    var haystack = (typeLabel + ' ' + (entry.notes || '') + ' ' + (entry.garage || '') + ' ' + (entry.supplier || '')).toLowerCase();
     if(haystack.indexOf(s) === -1) return false;
   }
   return true;
@@ -784,7 +792,7 @@ function exportHistoryCSV(vehicleId){
     rows.push(['Total dépensé', fmtEuro(costStats.total)]);
     if(costStats.perKm != null) rows.push(['Coût moyen au km', fmtEuro(costStats.perKm)]);
   }
-  rows.push([], ['Date', 'Type d\'intervention', 'Kilométrage', 'Coût (€)', 'Facture', 'Notes', 'Résultat CT', 'Défauts relevés', 'Contre-visite']);
+  rows.push([], ['Date', 'Type d\'intervention', 'Kilométrage', 'Coût (€)', 'Garage', 'Fournisseur', 'Facture', 'Notes', 'Résultat CT', 'Défauts relevés', 'Contre-visite']);
   entries.forEach(function(e){
     var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
     var label = typeObj ? typeObj.label : e.typeId;
@@ -809,7 +817,7 @@ function exportHistoryCSV(vehicleId){
     var costStr = e.cost != null ? e.cost.toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + (e.batchId ? ' (facture partagée)' : '') : '';
     var invoiceStr = e.invoiceDoc ? e.invoiceDoc.name : '';
 
-    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', costStr, invoiceStr, e.notes || '', ctResult, ctDefects, ctCounterVisit]);
+    rows.push([fmtDate(e.date), label, e.km != null ? e.km : '', costStr, e.garage || '', e.supplier || '', invoiceStr, e.notes || '', ctResult, ctDefects, ctCounterVisit]);
   });
 
   var csv = rows.map(function(row){ return row.map(csvEscape).join(';'); }).join('\r\n');
@@ -877,7 +885,7 @@ function openSaleDossierModal(vehicleId){
       '<div class="field"><label>Jusqu\'au (optionnel)</label><input type="date" id="dossier-to"></div>' +
     '</div>' +
     '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-notes" checked><span class="name">Inclure les notes des interventions</span></div>' +
-    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-garage" checked><span class="name">Inclure le nom des garages</span></div>' +
+    '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-garage" checked><span class="name">Inclure garages et fournisseurs</span></div>' +
     '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-costs" checked><span class="name">Inclure les coûts et le total dépensé</span></div>' +
     '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-invoices"><span class="name">Intégrer les images de factures (photos uniquement)</span></div>' +
     '<div class="type-row" style="border:none; padding:4px 0;"><input type="checkbox" id="dossier-insurance"><span class="name">Inclure les coordonnées d\'assurance</span></div>' +
@@ -985,6 +993,7 @@ async function generateSaleDossier(vehicleId, options){
       html += '<div class="history-type">' + escapeHtml(label) + '</div>';
       if(options.includeNotes && e.notes) html += '<div class="history-notes">' + escapeHtml(e.notes) + '</div>';
       if(options.includeGarage && e.garage) html += '<div class="history-notes">🔧 ' + escapeHtml(e.garage) + '</div>';
+      if(options.includeGarage && e.supplier) html += '<div class="history-notes">📦 ' + escapeHtml(e.supplier) + '</div>';
       if(e.ct){
         var ctResultMap = { ok: ['✅ Favorable', 'ok'], remarks: ['⚠️ Favorable avec remarques', 'remarks'], ko: ['❌ Défavorable', 'ko'] };
         var ctBadge = ctResultMap[e.ct.result] || ctResultMap.ok;
@@ -1671,10 +1680,13 @@ function renderContent(){
   html += '</div></div>';
   html += '</div>'; // Fin vehicle-header
 
-  // Section 1 : Échéances à venir
+  // Section 1 : Échéances à venir (repliable — pratique sur mobile pour
+  // atteindre l'historique sans tout dérouler)
+  var isCollapsed = !!gaugesSectionCollapsed[activeVehicleId];
   html += '<section>';
-  html += '<h2 class="section-title">Échéances d\'entretien</h2>';
-  
+  html += '<h2 class="section-title collapsible-title" id="gaugesToggle"><span>Échéances d\'entretien</span><span class="collapse-chevron">' + (isCollapsed ? '▸' : '▾') + '</span></h2>';
+  html += '<div id="gaugesBody" style="display:' + (isCollapsed ? 'none' : 'block') + ';">';
+
   var enabled = v.enabledTypes || [];
   if(!enabled.length){
     html += '<div class="gauge-empty">Aucun type d\'entretien activé pour ce véhicule.</div>';
@@ -1720,6 +1732,8 @@ function renderContent(){
       html += '</div>';
     });
   }
+  html += '</div>'; // fin #gaugesBody
+  html += '<a href="#historique-section" class="jump-link">↓ Aller à l\'historique</a>';
   html += '</section>';
 
   // Section 1bis : Coûts d'entretien (déduplication des factures partagées par batchId)
@@ -1752,7 +1766,7 @@ function renderContent(){
     historyFiltersVehicleId = activeVehicleId;
   }
 
-  html += '<section>';
+  html += '<section id="historique-section">';
   html += '<h2 class="section-title"><span>Historique complet (' + entries.length + ')</span>';
   html += '<span class="export-actions">';
   html += '<button class="export-btn" id="printBtn" title="Imprimer / Enregistrer en PDF">🖨 PDF</button>';
@@ -1814,6 +1828,12 @@ function renderContent(){
       html += '<div class="history-main">';
       html += '<div class="history-type">' + escapeHtml(label) + '</div>';
       if(entry.notes) html += '<div class="history-notes">' + escapeHtml(entry.notes) + '</div>';
+      if(entry.garage || entry.supplier){
+        var gsParts = [];
+        if(entry.garage) gsParts.push('🔧 ' + entry.garage);
+        if(entry.supplier) gsParts.push('📦 ' + entry.supplier);
+        html += '<div class="history-notes">' + escapeHtml(gsParts.join(' · ')) + '</div>';
+      }
       if(entry.ct){
         var ctResultMap = { ok: ['✅ Favorable', 'ok'], remarks: ['⚠️ Favorable avec remarques', 'remarks'], ko: ['❌ Défavorable', 'ko'] };
         var ctBadge = ctResultMap[entry.ct.result] || ctResultMap.ok;
@@ -1892,6 +1912,12 @@ function renderContent(){
 
   var settingsBtn = document.getElementById('settingsBtn');
   if(settingsBtn) settingsBtn.onclick = openSettingsModal;
+
+  var gaugesToggle = document.getElementById('gaugesToggle');
+  if(gaugesToggle) gaugesToggle.onclick = function(){
+    gaugesSectionCollapsed[activeVehicleId] = !gaugesSectionCollapsed[activeVehicleId];
+    renderContent();
+  };
 
   var printBtn = document.getElementById('printBtn');
   if(printBtn) printBtn.onclick = printVehicle;
@@ -2160,7 +2186,15 @@ function openEntryModal(entryId){
     var chips = availableTypes.map(function(t){
       return '<label class="type-select-chip"><input type="checkbox" class="f-type-multi" value="' + t.id + '">' + escapeHtml(t.label) + '</label>';
     }).join('');
-    typeSelectionHtml = '<div class="field"><label>Type(s) d\'intervention</label><div class="type-select-list">' + chips + '</div></div>';
+    typeSelectionHtml = '<div class="field"><label>Type(s) d\'intervention</label>' +
+      '<div class="type-select-list" id="typeSelectList">' + chips + '</div>' +
+      '<button type="button" class="ct-add-defect-btn" id="quickAddTypeBtn" style="margin-top:8px;">+ Nouveau type</button>' +
+      '<div class="quick-add-type-form" id="quickAddTypeForm" style="display:none;">' +
+        '<input type="text" id="quickTypeName" placeholder="Nom du type (ex : Recharge Clim)">' +
+        '<select id="quickTypeCategory">' + HISTORY_CATEGORIES.map(function(c){ return '<option value="' + c.id + '">' + c.label + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="btn btn-primary" id="quickTypeCreateBtn" style="width:auto;">Créer</button>' +
+      '</div>' +
+    '</div>';
   }
 
   var modal = document.getElementById('modal');
@@ -2173,6 +2207,7 @@ function openEntryModal(entryId){
   var costVal = entry ? (entry.cost != null ? entry.cost : '') : '';
   var costLabel = entry ? 'Coût (€)' : 'Coût total (€) — optionnel, appliqué à toutes les interventions sélectionnées';
   var garageVal = entry ? (entry.garage || '') : '';
+  var supplierVal = entry ? (entry.supplier || '') : '';
 
   var invoiceCurrentHtml = '';
   if(entry && entry.invoiceDoc){
@@ -2192,6 +2227,7 @@ function openEntryModal(entryId){
       '<div class="field"><label>' + costLabel + '</label><input type="number" step="0.01" min="0" id="f-cost" value="' + costVal + '" placeholder="—"></div>' +
       '<div class="field"><label>Garage</label><input type="text" id="f-garage" value="' + escapeHtml(garageVal) + '" placeholder="Ex : Feu Vert, Norauto, moi-même..."></div>' +
     '</div>' +
+    '<div class="field"><label>Fournisseur (pièces)</label><input type="text" id="f-supplier" value="' + escapeHtml(supplierVal) + '" placeholder="Ex : Oscaro, Mister Auto, concession..."></div>' +
     '<div class="field"><label>Facture (PDF/photo)</label>' + invoiceCurrentHtml +
       '<button type="button" class="export-btn" id="invoiceFileBtn">📎 Joindre une facture</button>' +
       '<span id="invoiceFileName" class="field-hint" style="display:block; margin-top:4px;"></span>' +
@@ -2271,6 +2307,50 @@ function openEntryModal(entryId){
         }
       });
     });
+
+    // "+ Nouveau type" : créer un type à la volée sans fermer la modale ni
+    // perdre la saisie déjà en cours (date, km, autres types cochés...).
+    var quickAddTypeBtn = document.getElementById('quickAddTypeBtn');
+    var quickAddTypeForm = document.getElementById('quickAddTypeForm');
+    if(quickAddTypeBtn && quickAddTypeForm){
+      quickAddTypeBtn.onclick = function(){
+        var showing = quickAddTypeForm.style.display !== 'none';
+        quickAddTypeForm.style.display = showing ? 'none' : 'flex';
+        if(!showing) document.getElementById('quickTypeName').focus();
+      };
+    }
+    var quickTypeCreateBtn = document.getElementById('quickTypeCreateBtn');
+    if(quickTypeCreateBtn){
+      quickTypeCreateBtn.onclick = async function(){
+        var nameInput = document.getElementById('quickTypeName');
+        var name = nameInput.value.trim();
+        if(!name){ await showAlert('Merci de nommer le nouveau type.'); return; }
+        var id = slugify(name);
+        if(state.types.filter(function(t){ return t.id === id; }).length){
+          await showAlert('Un type avec un nom trop proche existe déjà.');
+          return;
+        }
+        var category = document.getElementById('quickTypeCategory').value;
+        state.types.push({ id: id, label: name, km: null, months: null, category: category });
+        if(!v.enabledTypes) v.enabledTypes = [];
+        v.enabledTypes.push(id);
+        if(!v.intervals) v.intervals = {};
+        v.intervals[id] = { km: null, months: null };
+        logEvent(activeVehicleId, 'Type d\'intervention créé : ' + name);
+        await persist();
+
+        // Ajoute la puce directement dans la liste déjà affichée, sans tout reconstruire.
+        var list = document.getElementById('typeSelectList');
+        if(list){
+          var label = document.createElement('label');
+          label.className = 'type-select-chip';
+          label.innerHTML = '<input type="checkbox" class="f-type-multi" value="' + id + '" checked>' + escapeHtml(name);
+          list.appendChild(label);
+        }
+        nameInput.value = '';
+        quickAddTypeForm.style.display = 'none';
+      };
+    }
   }
 }
 
@@ -2281,6 +2361,7 @@ async function saveEntry(){
   var costInput = document.getElementById('f-cost').value;
   var cost = costInput === '' ? null : parseFloat(costInput);
   var garage = document.getElementById('f-garage').value.trim();
+  var supplier = document.getElementById('f-supplier').value.trim();
 
   if(!date){ await showAlert('Merci de renseigner une date.'); return; }
   if(isNaN(km) || km < 0){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
@@ -2341,6 +2422,7 @@ async function saveEntry(){
         list[i].notes = sharedNotes;
         list[i].cost = cost;
         list[i].garage = garage || null;
+        list[i].supplier = supplier || null;
         list[i].updatedAt = now;
         if(ctData) list[i].ct = ctData; else delete list[i].ct;
 
@@ -2373,6 +2455,7 @@ async function saveEntry(){
         notes: notesForThis,
         cost: cost,
         garage: garage || null,
+        supplier: supplier || null,
         batchId: batchId,
         documents: [],
         createdAt: now,
@@ -2689,9 +2772,8 @@ function renderTypesManagerModal(){
     '<div id="tmTypesList">' + rows + '</div>' +
     '<hr class="hr">' +
     '<div class="field"><label>Nouveau type</label>' +
-      '<div class="add-type-row"><input type="text" id="tmNewTypeName" placeholder="Ex : Recharge Clim">' +
-        '<select id="tmNewTypeCategory">' + HISTORY_CATEGORIES.map(function(c){ return '<option value="' + c.id + '">' + c.label + '</option>'; }).join('') + '</select>' +
-      '</div>' +
+      '<input type="text" id="tmNewTypeName" placeholder="Ex : Recharge Clim" style="width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:13.5px; padding:9px 11px; border-radius:9px; margin-bottom:8px;">' +
+      '<select id="tmNewTypeCategory" class="tm-type-category">' + HISTORY_CATEGORIES.map(function(c){ return '<option value="' + c.id + '">' + c.label + '</option>'; }).join('') + '</select>' +
       '<div class="tm-vehicle-list" id="tmNewTypeVehicles" style="margin-top:8px;">' + vehicleChecklist(null, 'tm-new-vehicle-toggle') + '</div>' +
       '<button type="button" class="ct-add-defect-btn" id="tmAddTypeBtn" style="margin-top:10px;">+ Ajouter ce type</button>' +
     '</div>' +
