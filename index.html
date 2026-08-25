@@ -92,6 +92,7 @@
   .gauge-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
   .gauge-ref{ font-size:11px; color:var(--text-muted); margin-top:3px; }
   .collapsible-title{ cursor:pointer; user-select:none; }
+  .collapsible-title-inline{ cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px; }
   .collapse-chevron{ color:var(--text-muted); font-size:12px; }
   .jump-link{ display:inline-block; margin-top:10px; font-size:12px; color:var(--yellow); text-decoration:none; }
   .jump-link:hover{ text-decoration:underline; }
@@ -413,6 +414,8 @@ var historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: fal
 var historyFiltersVehicleId = null;
 var gaugesSectionCollapsed = {}; // { vehicleId: true/false } — état repliable, en mémoire seulement
 var costChartYears = {}; // { vehicleId: nombre d'années affichées dans le graphique } — défaut 10
+var costsSectionCollapsed = {};   // { vehicleId: true/false } — section "Coûts d'entretien"
+var historySectionCollapsed = {}; // { vehicleId: true/false } — section "Historique complet"
 
 function matchesHistoryFilters(entry, typeLabel, category){
   if(historyFilters.category !== 'all' && category !== historyFilters.category) return false;
@@ -1816,8 +1819,10 @@ function renderContent(){
   // Section 1bis : Coûts d'entretien (déduplication des factures partagées par batchId)
   var costStats = computeCostStats(entries);
   if(costStats.hasAny){
+    var costsCollapsed = !!costsSectionCollapsed[activeVehicleId];
     html += '<section>';
-    html += '<h2 class="section-title"><span>Coûts d\'entretien</span></h2>';
+    html += '<h2 class="section-title collapsible-title" id="costsToggle"><span>Coûts d\'entretien</span><span class="collapse-chevron">' + (costsCollapsed ? '▸' : '▾') + '</span></h2>';
+    html += '<div id="costsBody" style="display:' + (costsCollapsed ? 'none' : 'block') + ';">';
     html += '<div class="cost-stats-grid">';
     html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(costStats.total) + '</div><div class="cost-stat-label">Total dépensé</div></div>';
     if(costStats.perKm != null){
@@ -1842,6 +1847,7 @@ function renderContent(){
         html += '<div class="cost-chart-legend">Moyenne : ' + fmtEuro(chart.avg) + ' · Médiane : ' + fmtEuro(chart.med) + '</div>';
       }
     }
+    html += '</div>'; // fin #costsBody
     html += '</section>';
   }
 
@@ -1850,15 +1856,19 @@ function renderContent(){
     historyFilters = { category: 'all', garage: '', search: '', invoiceOnly: false, dateFrom: '', dateTo: '' };
     historyFiltersVehicleId = activeVehicleId;
   }
+  var historyCollapsed = !!historySectionCollapsed[activeVehicleId];
 
   html += '<section id="historique-section">';
-  html += '<h2 class="section-title"><span>Historique complet (' + entries.length + ')</span>';
+  html += '<h2 class="section-title">';
+  html += '<span class="collapsible-title-inline" id="historyToggle"><span>Historique complet (' + entries.length + ')</span><span class="collapse-chevron">' + (historyCollapsed ? '▸' : '▾') + '</span></span>';
   html += '<span class="export-actions">';
   html += '<button class="export-btn" id="printBtn" title="Imprimer / Enregistrer en PDF">🖨 PDF</button>';
   html += '<button class="export-btn" id="exportCsvBtn" title="Exporter en CSV">⬇ CSV</button>';
   html += '<button class="export-btn" id="emailHistoryBtn" title="Envoyer par email">✉️ Email</button>';
   html += '<button class="export-btn" id="saleDossierBtn" title="Générer un dossier de vente">🚗 Dossier de vente</button>';
   html += '</span></h2>';
+
+  html += '<div id="historyBody" style="display:' + (historyCollapsed ? 'none' : 'block') + ';">';
 
   if(entries.length){
     html += '<div class="hist-filters">';
@@ -1949,6 +1959,7 @@ function renderContent(){
       html += '</div>';
     });
   }
+  html += '</div>'; // fin #historyBody
   html += '</section>';
 
   content.innerHTML = html;
@@ -2001,6 +2012,18 @@ function renderContent(){
   var gaugesToggle = document.getElementById('gaugesToggle');
   if(gaugesToggle) gaugesToggle.onclick = function(){
     gaugesSectionCollapsed[activeVehicleId] = !gaugesSectionCollapsed[activeVehicleId];
+    renderContent();
+  };
+
+  var costsToggle = document.getElementById('costsToggle');
+  if(costsToggle) costsToggle.onclick = function(){
+    costsSectionCollapsed[activeVehicleId] = !costsSectionCollapsed[activeVehicleId];
+    renderContent();
+  };
+
+  var historyToggle = document.getElementById('historyToggle');
+  if(historyToggle) historyToggle.onclick = function(){
+    historySectionCollapsed[activeVehicleId] = !historySectionCollapsed[activeVehicleId];
     renderContent();
   };
 
