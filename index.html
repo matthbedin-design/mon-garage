@@ -96,6 +96,8 @@
   .collapse-chevron{ color:var(--text-muted); font-size:12px; }
   .jump-link{ display:inline-block; margin-top:10px; font-size:12px; color:var(--yellow); text-decoration:none; }
   .jump-link:hover{ text-decoration:underline; }
+  .scroll-top-btn{ position:fixed; bottom:80px; right:16px; width:42px; height:42px; border-radius:50%; background:var(--surface); border:1px solid var(--border); color:var(--yellow); font-size:18px; cursor:pointer; z-index:40; box-shadow:0 2px 8px rgba(0,0,0,.3); align-items:center; justify-content:center; }
+  .scroll-top-btn:hover{ border-color:var(--yellow); }
   .gauge-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
   .gauge-label{ font-size:14px; font-weight:600; }
   .gauge-status{ font-family:'JetBrains Mono',monospace; font-size:12px; }
@@ -257,7 +259,7 @@
 
   @media print {
     body { background: #fff !important; color: #000 !important; }
-    .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay, .confirm-overlay, .sync-status, .doc-remove, .export-actions { display: none !important; }
+    .topbar, .tabs, .fab, .auth-overlay, .icon-btn, .doc-add-btn, .doc-chip-del, #addBtn, .modal-overlay, .confirm-overlay, .sync-status, .doc-remove, .export-actions, .scroll-top-btn { display: none !important; }
     .app { max-width: 100% !important; padding: 0 !important; }
     .vehicle-header, .gauge-card, .history-row { border: 1px solid #ccc !important; background: #fff !important; color: #000 !important; page-break-inside: avoid; }
     .vehicle-name, .history-type, .km { color: #000 !important; }
@@ -276,7 +278,7 @@
   }
 
   #dossierPrintArea{ display:none; }
-  body.dossier-mode > .app, body.dossier-mode > .modal-overlay, body.dossier-mode > .confirm-overlay, body.dossier-mode > .fab { display:none !important; }
+  body.dossier-mode > .app, body.dossier-mode > .modal-overlay, body.dossier-mode > .confirm-overlay, body.dossier-mode > .fab, body.dossier-mode > .scroll-top-btn { display:none !important; }
   body.dossier-mode #dossierPrintArea{ display:block !important; max-width:720px; margin:0 auto; padding:24px; color:var(--text); }
   .dossier-cover{ text-align:center; padding:20px 0 28px; border-bottom:2px solid var(--yellow); margin-bottom:22px; }
   .dossier-cover h1{ font-family:'Oswald',sans-serif; font-size:26px; margin:0 0 6px; }
@@ -342,6 +344,8 @@
 <div class="fab">
   <button class="add-btn" id="addBtn">+ Nouvelle intervention</button>
 </div>
+
+<button id="scrollTopBtn" class="scroll-top-btn" aria-label="Remonter en haut" style="display:none;">↑</button>
 
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal" id="modal"></div>
@@ -1768,10 +1772,26 @@ function renderContent(){
   html += '<div id="gaugesBody" style="display:' + (isCollapsed ? 'none' : 'block') + ';">';
 
   var enabled = v.enabledTypes || [];
-  if(!enabled.length){
-    html += '<div class="gauge-empty">Aucun type d\'entretien activé pour ce véhicule.</div>';
+  // Ne garde que les types ayant une échéance réellement configurée (km ou mois),
+  // sauf si l'utilisateur a explicitement demandé à toujours afficher ce type
+  // (case "Toujours afficher" dans les réglages du véhicule).
+  var gaugeTypeIds = enabled.filter(function(typeId){
+    var cfg = getTypeConfig(v, typeId);
+    if(!cfg) return false;
+    var alwaysShow = !!(v.intervals && v.intervals[typeId] && v.intervals[typeId].alwaysShowGauge);
+    return alwaysShow || cfg.km != null || cfg.months != null;
+  });
+  // Tri alphabétique — plus facile à parcourir sur une longue liste de types.
+  gaugeTypeIds.sort(function(a, b){
+    var ta = state.types.filter(function(t){ return t.id === a; })[0];
+    var tb = state.types.filter(function(t){ return t.id === b; })[0];
+    return (ta ? ta.label : a).localeCompare(tb ? tb.label : b, 'fr');
+  });
+
+  if(!gaugeTypeIds.length){
+    html += '<div class="gauge-empty">Aucune échéance configurée pour ce véhicule. Renseigne un seuil (km/mois) ou coche "Toujours afficher" dans les réglages du véhicule.</div>';
   } else {
-    enabled.forEach(function(typeId){
+    gaugeTypeIds.forEach(function(typeId){
       var st = computeStatus(activeVehicleId, typeId);
       if(!st) return;
 
@@ -2289,7 +2309,9 @@ function openEntryModal(entryId){
   var entry = entryId ? entries.filter(function(e){ return e.id === entryId; })[0] : null;
 
   var enabledTypes = v.enabledTypes || [];
-  var availableTypes = state.types.filter(function(t){ return enabledTypes.indexOf(t.id) > -1 || (entry && entry.typeId === t.id); });
+  var availableTypes = state.types
+    .filter(function(t){ return enabledTypes.indexOf(t.id) > -1 || (entry && entry.typeId === t.id); })
+    .sort(function(a, b){ return a.label.localeCompare(b.label, 'fr'); });
 
   var typeSelectionHtml;
   if(entry){
@@ -2680,6 +2702,11 @@ function collectSettingsFormData(v, modal, swatchWrap){
     if(!v.intervals[t]) v.intervals[t] = {};
     v.intervals[t].notify = cb.checked; // false = pas d'email pour ce type sur ce véhicule
   });
+  Array.prototype.forEach.call(modal.querySelectorAll('.type-row .always-show-checkbox'), function(cb){
+    var t = cb.getAttribute('data-type');
+    if(!v.intervals[t]) v.intervals[t] = {};
+    v.intervals[t].alwaysShowGauge = cb.checked;
+  });
 }
 
 function openSettingsModal(){
@@ -2689,12 +2716,14 @@ function openSettingsModal(){
   var enabledTypeIds = v.enabledTypes || [];
   var rows = state.types
     .filter(function(t){ return enabledTypeIds.indexOf(t.id) > -1; })
+    .sort(function(a, b){ return a.label.localeCompare(b.label, 'fr'); })
     .map(function(t){
       var iv = (v.intervals && v.intervals[t.id]) || {};
       var kmVal = iv.km !== undefined ? iv.km : t.km;
       var monthsVal = iv.months !== undefined ? iv.months : t.months;
       var notesVal = iv.notes || '';
       var notifyChecked = iv.notify !== false; // activé par défaut
+      var alwaysShowChecked = !!iv.alwaysShowGauge;
 
       return '<div class="type-row">' +
         '<div class="type-row-main">' +
@@ -2705,6 +2734,7 @@ function openSettingsModal(){
         '</div>' +
         '<input type="text" class="ref-input" data-type="' + t.id + '" data-field="notes" value="' + escapeHtml(notesVal) + '" placeholder="Référence (ex : 5W30 - 4,5L - filtre réf. XYZ)">' +
         '<label class="notify-toggle"><input type="checkbox" class="notify-checkbox" data-type="' + t.id + '"' + (notifyChecked ? ' checked' : '') + '> 🔔 Notifier par email pour ce véhicule</label>' +
+        '<label class="notify-toggle"><input type="checkbox" class="always-show-checkbox" data-type="' + t.id + '"' + (alwaysShowChecked ? ' checked' : '') + '> 👁️ Toujours afficher dans les échéances (même sans km/mois configurés)</label>' +
         '</div>';
     }).join('');
 
@@ -2750,7 +2780,8 @@ function openSettingsModal(){
       (canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce véhicule</button>' : '') +
       '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
       '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' +
-    '</div>';
+    '</div>' +
+    '<div id="settingsSaveStatus" style="text-align:center; font-size:12.5px; color:var(--green); margin-top:8px; min-height:16px;"></div>';
 
   var swatchWrap = document.getElementById('s-swatches');
   PALETTE.forEach(function(c){
@@ -2819,9 +2850,16 @@ function openSettingsModal(){
     if(v.color !== oldColor) logEvent(activeVehicleId, 'Couleur du véhicule modifiée');
     logEvent(activeVehicleId, 'Réglages des échéances mis à jour');
 
-    await persist();
-    closeModal();
-    render();
+    var ok = await persist();
+    render(); // met à jour la page derrière la modale, qui reste ouverte
+
+    var statusEl = document.getElementById('settingsSaveStatus');
+    if(statusEl){
+      statusEl.style.color = ok ? 'var(--green)' : 'var(--red)';
+      statusEl.textContent = ok ? '✓ Enregistré' : '❌ Échec de l\'enregistrement, réessayez.';
+      clearTimeout(statusEl._clearTimer);
+      statusEl._clearTimer = setTimeout(function(){ if(statusEl) statusEl.textContent = ''; }, 3000);
+    }
   };
 }
 
@@ -2864,7 +2902,7 @@ function renderTypesManagerModal(){
     }).join('');
   }
 
-  var rows = state.types.map(function(t){
+  var rows = state.types.slice().sort(function(a, b){ return a.label.localeCompare(b.label, 'fr'); }).map(function(t){
     var reminderKmVal = (t.reminderKm != null) ? t.reminderKm : '';
     var reminderDaysVal = (t.reminderDays != null) ? t.reminderDays : '';
     var catOptions = HISTORY_CATEGORIES.map(function(c){
@@ -3124,6 +3162,16 @@ if(addBtn) addBtn.addEventListener('click', function(){ openEntryModal(null); })
 
 var journalBtn = document.getElementById('journalBtn');
 if(journalBtn) journalBtn.addEventListener('click', openJournalModal);
+
+var scrollTopBtn = document.getElementById('scrollTopBtn');
+if(scrollTopBtn){
+  window.addEventListener('scroll', debounce(function(){
+    scrollTopBtn.style.display = (window.scrollY > 400) ? 'flex' : 'none';
+  }, 100));
+  scrollTopBtn.onclick = function(){
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+}
 
 var modalOverlay = document.getElementById('modalOverlay');
 if(modalOverlay){
