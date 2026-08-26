@@ -1038,7 +1038,7 @@ async function generateSaleDossier(vehicleId, options){
   // Fiche véhicule
   html += '<div class="dossier-section-title">Caractéristiques</div>';
   html += '<div class="dossier-fiche-grid">';
-  html += '<div><span>Kilométrage : </span>' + fmtKm(v.mileage) + '</div>';
+  if(!isTrailer(v)) html += '<div><span>Kilométrage : </span>' + fmtKm(v.mileage) + '</div>';
   html += '<div><span>Immatriculation : </span>' + escapeHtml(v.plate || '—') + '</div>';
   if(v.brand) html += '<div><span>Marque : </span>' + escapeHtml(v.brand) + '</div>';
   if(v.model) html += '<div><span>Modèle : </span>' + escapeHtml(v.model) + '</div>';
@@ -1216,9 +1216,14 @@ function makeVehicle(name, color, enabledTypes){
     documents: [],
     enabledTypes: enabledTypes || DEFAULT_TYPES.map(function(t){ return t.id; }),
     intervals: {},
+    vehicleType: 'motorized', // 'motorized' (véhicule à moteur) ou 'trailer' (remorque/caravane, pas de kilométrage)
     // Fiche véhicule (facultatif, éditable dans les réglages)
     brand: '', model: '', year: '', vin: '', fuel: '', firstRegDate: '', insurance: ''
   };
+}
+
+function isTrailer(v){
+  return v && v.vehicleType === 'trailer';
 }
 
 function logEvent(vehicleId, message){
@@ -1486,7 +1491,7 @@ function computeStatus(vehicleId, typeId){
   if(!last) return result;
 
   var pctKm = 0;
-  if(cfg.km && cfg.km > 0){
+  if(cfg.km && cfg.km > 0 && !isTrailer(v)){
     var doneKm = currentKm - (last.km || 0);
     result.remainingKm = cfg.km - doneKm;
     pctKm = Math.min(100, Math.max(0, (doneKm / cfg.km) * 100));
@@ -1649,7 +1654,10 @@ function renderDashboardContent(content){
     html += '<div class="dash-card-name">' + escapeHtml(s.v.name) + '</div>';
     html += '<span class="dash-badge" style="background:' + badgeColor + ';">' + escapeHtml(badgeText) + '</span>';
     html += '</div>';
-    html += '<div class="dash-card-meta">' + fmtKm(s.v.mileage) + (s.v.plate ? ' · ' + escapeHtml(s.v.plate) : '') + '</div>';
+    var metaParts = [];
+    if(!isTrailer(s.v)) metaParts.push(fmtKm(s.v.mileage));
+    if(s.v.plate) metaParts.push(escapeHtml(s.v.plate));
+    html += '<div class="dash-card-meta">' + metaParts.join(' · ') + '</div>';
 
     if(s.alertItems.length){
       html += '<ul class="dash-alert-list">';
@@ -1725,11 +1733,13 @@ function renderContent(){
   html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule" aria-label="Réglages du véhicule">' + gearSvg() + '</button>';
   html += '</div>';
 
-  // Kilométrage
-  html += '<div class="mileage-row">';
-  html += '<input type="number" class="mileage-input" id="v-km" value="' + (v.mileage || 0) + '">';
-  html += '<span class="mileage-unit">km parcourus</span>';
-  html += '</div>';
+  // Kilométrage (masqué pour les remorques/caravanes)
+  if(!isTrailer(v)){
+    html += '<div class="mileage-row">';
+    html += '<input type="number" class="mileage-input" id="v-km" value="' + (v.mileage || 0) + '">';
+    html += '<span class="mileage-unit">km parcourus</span>';
+    html += '</div>';
+  }
 
   // Fiche véhicule (affichée seulement si au moins un champ est renseigné)
   var fiche = [];
@@ -1972,7 +1982,7 @@ function renderContent(){
       html += '</div>';
       html += '<div class="history-meta">';
       if(entry.cost != null) html += '<div class="km">' + entry.cost.toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + ' €</div>';
-      html += '<div class="km">' + fmtKm(entry.km) + '</div>';
+      if(!isTrailer(v)) html += '<div class="km">' + fmtKm(entry.km) + '</div>';
       html += '<div>' + fmtDate(entry.date) + '</div>';
       html += '</div>';
       html += '</div>';
@@ -2356,13 +2366,18 @@ function openEntryModal(entryId){
       ' <button type="button" class="link-btn" id="removeInvoiceBtn">Retirer</button></div>';
   }
 
+  var trailerVehicle = isTrailer(v);
+  var dateKmHtml = trailerVehicle
+    ? '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>'
+    : '<div class="row2">' +
+        '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
+        '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
+      '</div>';
+
   modal.innerHTML =
     '<h3>' + title + ' <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     typeSelectionHtml +
-    '<div class="row2">' +
-      '<div class="field"><label>Date</label><input type="date" id="f-date" value="' + dateVal + '"></div>' +
-      '<div class="field"><label>Kilométrage</label><input type="number" id="f-km" value="' + kmVal + '"></div>' +
-    '</div>' +
+    dateKmHtml +
     '<div class="row2">' +
       '<div class="field"><label>' + costLabel + '</label><input type="number" step="0.01" min="0" id="f-cost" value="' + costVal + '" placeholder="—"></div>' +
       '<div class="field"><label>Garage</label><input type="text" id="f-garage" value="' + escapeHtml(garageVal) + '" placeholder="Ex : Feu Vert, Norauto, moi-même..."></div>' +
@@ -2495,8 +2510,10 @@ function openEntryModal(entryId){
 }
 
 async function saveEntry(){
+  var vSave = state.vehicles[activeVehicleId];
   var date = document.getElementById('f-date').value;
-  var km = parseInt(document.getElementById('f-km').value || '0', 10);
+  var kmField = document.getElementById('f-km');
+  var km = kmField ? parseInt(kmField.value || '0', 10) : null;
   var sharedNotes = document.getElementById('f-notes').value.trim();
   var costInput = document.getElementById('f-cost').value;
   var cost = costInput === '' ? null : parseFloat(costInput);
@@ -2504,7 +2521,7 @@ async function saveEntry(){
   var supplier = document.getElementById('f-supplier').value.trim();
 
   if(!date){ await showAlert('Merci de renseigner une date.'); return; }
-  if(isNaN(km) || km < 0){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
+  if(kmField && (isNaN(km) || km < 0)){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
   if(cost !== null && (isNaN(cost) || cost < 0)){ await showAlert('Le coût doit être un nombre positif.'); return; }
 
   var typeIds;
@@ -2516,7 +2533,7 @@ async function saveEntry(){
     if(!typeIds.length){ await showAlert('Merci de sélectionner au moins un type d\'intervention.'); return; }
   }
 
-  var conflict = findKmConflict(activeVehicleId, date, km, editingEntryId);
+  var conflict = km != null ? findKmConflict(activeVehicleId, date, km, editingEntryId) : null;
   if(conflict){
     var conflictType = state.types.filter(function(t){ return t.id === conflict.typeId; })[0];
     var conflictLabel = conflictType ? conflictType.label : conflict.typeId;
@@ -2609,7 +2626,7 @@ async function saveEntry(){
     logEvent(activeVehicleId, 'Intervention' + (createdLabels.length > 1 ? 's' : '') + ' ajoutée' + (createdLabels.length > 1 ? 's' : '') + ' : ' + createdLabels.join(', ') + ' (' + fmtKm(km) + ', ' + fmtDate(date) + ')');
   }
 
-  if(v && km > v.mileage) v.mileage = km;
+  if(v && km != null && km > v.mileage) v.mileage = km;
 
   pendingInvoiceFile = null;
   removeInvoiceRequested = false;
@@ -2663,6 +2680,16 @@ function collectSettingsFormData(v, modal, swatchWrap){
 
   var selected = swatchWrap.querySelector('.swatch.selected');
   if(selected) v.color = selected.getAttribute('data-color');
+
+  var vehicleTypeEl = document.getElementById('s-vehicletype');
+  if(vehicleTypeEl){
+    var wasTrailer = isTrailer(v);
+    v.vehicleType = vehicleTypeEl.value;
+    // En passant en remorque, on efface le kilométrage (qui n'a plus de sens) ;
+    // en repassant à moteur, on repart de 0 si rien n'était enregistré avant.
+    if(v.vehicleType === 'trailer' && !wasTrailer) v.mileage = null;
+    if(v.vehicleType === 'motorized' && wasTrailer && v.mileage == null) v.mileage = 0;
+  }
 
   var brandEl = document.getElementById('s-brand');
   if(brandEl) v.brand = brandEl.value.trim();
@@ -2727,7 +2754,7 @@ function openSettingsModal(){
       return '<div class="type-row">' +
         '<div class="type-row-main">' +
         '<span class="name">' + escapeHtml(t.label) + '</span>' +
-        '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>' +
+        (isTrailer(v) ? '' : '<input type="number" data-type="' + t.id + '" data-field="km" value="' + (kmVal == null ? '' : kmVal) + '" placeholder="—"><span class="unit">km</span>') +
         '<input type="number" data-type="' + t.id + '" data-field="months" value="' + (monthsVal == null ? '' : monthsVal) + '" placeholder="—"><span class="unit">mois</span>' +
         '<button class="trash-btn" data-deltype="' + t.id + '" title="Supprimer ce type pour tous les véhicules" aria-label="Supprimer ce type pour tous les véhicules">' + trashSvg() + '</button>' +
         '</div>' +
@@ -2746,6 +2773,10 @@ function openSettingsModal(){
   modal.innerHTML =
     '<h3>Réglages du véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Nom du véhicule</label><input type="text" id="s-name" value="' + escapeHtml(v.name) + '"></div>' +
+    '<div class="field"><label>Type de véhicule</label><select id="s-vehicletype">' +
+      '<option value="motorized"' + (!isTrailer(v) ? ' selected' : '') + '>Véhicule à moteur (suivi au kilométrage)</option>' +
+      '<option value="trailer"' + (isTrailer(v) ? ' selected' : '') + '>Remorque / Caravane (pas de kilométrage)</option>' +
+    '</select></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="s-swatches"></div></div>' +
     '<hr class="hr">' +
     '<div class="field-hint" style="margin-bottom:8px;">Fiche véhicule (facultatif)</div>' +
@@ -3049,7 +3080,11 @@ function openAddVehicleModal(){
   modal.innerHTML =
     '<h3>Ajouter un véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
     '<div class="field"><label>Nom</label><input type="text" id="nv-name" placeholder="Ex : Clio, Camping-car..."></div>' +
-    '<div class="field"><label>Kilométrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
+    '<div class="field"><label>Type de véhicule</label><select id="nv-vehicletype">' +
+      '<option value="motorized">Véhicule à moteur (suivi au kilométrage)</option>' +
+      '<option value="trailer">Remorque / Caravane (pas de kilométrage)</option>' +
+    '</select></div>' +
+    '<div class="field" id="nv-km-field"><label>Kilométrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="nv-swatches"></div></div>' +
     '<div class="modal-actions">' +
       '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
@@ -3073,10 +3108,19 @@ function openAddVehicleModal(){
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
 
+  var nvTypeSelect = document.getElementById('nv-vehicletype');
+  var nvKmField = document.getElementById('nv-km-field');
+  if(nvTypeSelect && nvKmField){
+    nvTypeSelect.onchange = function(){
+      nvKmField.style.display = (nvTypeSelect.value === 'trailer') ? 'none' : 'block';
+    };
+  }
+
   document.getElementById('createVehicleBtn').onclick = async function(){
     var name = document.getElementById('nv-name').value.trim();
     if(!name){ await showAlert('Merci de donner un nom au véhicule.'); return; }
 
+    var vehicleType = nvTypeSelect ? nvTypeSelect.value : 'motorized';
     var km = parseInt(document.getElementById('nv-km').value || '0', 10);
     var selected = swatchWrap.querySelector('.swatch.selected');
     var color = selected ? selected.getAttribute('data-color') : usedColor;
@@ -3084,7 +3128,8 @@ function openAddVehicleModal(){
     var id = genId('v');
     var allIds = state.types.map(function(t){ return t.id; });
     var vehicle = makeVehicle(name, color, allIds);
-    vehicle.mileage = isNaN(km) ? 0 : km;
+    vehicle.vehicleType = vehicleType;
+    vehicle.mileage = (vehicleType === 'trailer') ? null : (isNaN(km) ? 0 : km);
 
     state.vehicles[id] = vehicle;
     state.entries[id] = [];
