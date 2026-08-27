@@ -293,6 +293,14 @@
   .dossier-fiche-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 20px; font-size:13.5px; }
   .dossier-fiche-grid div span{ color:var(--text-muted); }
   .dossier-invoice-img{ max-width:100%; border-radius:8px; border:1px solid var(--border); margin:8px 0; }
+  .msheet-item{ background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+  .msheet-item-title{ font-family:'Oswald',sans-serif; font-size:15px; font-weight:600; margin-bottom:6px; }
+  .msheet-item-line{ font-size:13px; color:var(--text-muted); margin-top:3px; }
+  .msheet-item-quote{ font-style:italic; color:var(--text); }
+  .msheet-checklist-print{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:6px 16px; }
+  .msheet-checkbox-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); font-size:13.5px; }
+  .msheet-checkbox-row:last-child{ border-bottom:none; }
+  .msheet-checkbox{ font-size:17px; flex:none; }
   .dossier-actions{ text-align:center; margin-top:24px; display:flex; gap:10px; justify-content:center; }
   .dossier-jump{ display:inline-block; text-align:center; }
   @media print {
@@ -304,6 +312,7 @@
     .dossier-ct-banner.warning{ background:#fdf1e6 !important; border-color:#b3591e !important; }
     .dossier-ct-banner.overdue{ background:#fdecea !important; border-color:#b3261e !important; }
     .dossier-cover{ border-bottom-color:#c9971f !important; }
+    .msheet-item{ background:#fdfaf0 !important; border-color:#ddd !important; border-left-color:#c9971f !important; }
   }
 </style>
 </head>
@@ -394,6 +403,17 @@ var HISTORY_CATEGORIES = [
   { id: 'ct', label: 'CT' },
   { id: 'reparation', label: 'Réparation' },
   { id: 'autre', label: 'Autre' }
+];
+
+var DEFAULT_CHECKLIST_ITEMS = [
+  { id: 'chk_essuie_glaces', label: 'État et fonctionnement des balais d\'essuie-glace' },
+  { id: 'chk_feux', label: 'Fonctionnement des feux (avant, arrière, stop, clignotants)' },
+  { id: 'chk_plaquettes_av', label: 'Usure des plaquettes de frein AV' },
+  { id: 'chk_plaquettes_ar', label: 'Usure des plaquettes de frein AR' },
+  { id: 'chk_niveaux', label: 'Niveaux (huile, liquide de refroidissement, liquide de frein, lave-glace)' },
+  { id: 'chk_pneus', label: 'Pression et état des pneus (usure, hernies)' },
+  { id: 'chk_batterie', label: 'État de la batterie et des bornes' },
+  { id: 'chk_courroies', label: 'État visuel des courroies' }
 ];
 
 var sb = null;
@@ -1159,6 +1179,259 @@ async function loadDossierInvoiceImages(entries){
   }
 }
 
+// ---- Modale : configuration et génération de la fiche d'entretien à faire ----
+function openMaintenanceSheetModal(vehicleId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var modal = document.getElementById('modal');
+  var enabledTypeIds = v.enabledTypes || [];
+
+  var typesWithStatus = enabledTypeIds.map(function(typeId){
+    var st = computeStatus(vehicleId, typeId);
+    return { typeId: typeId, st: st };
+  }).filter(function(x){ return x.st; })
+    .sort(function(a, b){ return a.st.cfg.label.localeCompare(b.st.cfg.label, 'fr'); });
+
+  function statusLabel(st){
+    if(!st.last) return 'Aucun historique';
+    if(st.needsCounterVisit) return st.cvDeadlinePassed ? 'Contre-visite dépassée' : 'Contre-visite dans ' + st.remainingDays + ' j';
+    var parts = [];
+    if(st.remainingKm !== null) parts.push(st.remainingKm <= 0 ? 'dépassé de ' + Math.abs(st.remainingKm) + ' km' : 'dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+    if(st.remainingDays !== null) parts.push(st.remainingDays <= 0 ? 'dépassé de ' + Math.abs(st.remainingDays) + ' j' : 'dans ' + st.remainingDays + ' j');
+    return parts.length ? parts.join(' ou ') : 'Pas d\'échéance configurée';
+  }
+
+  function typeChecks(preselectMonths){
+    return typesWithStatus.map(function(x){
+      var preChecked = x.st.isOverdue || x.st.isWarning;
+      if(preselectMonths != null && x.st.remainingDays != null){
+        preChecked = x.st.remainingDays <= preselectMonths * 30.44;
+      }
+      return '<label class="tm-vehicle-chip" style="width:100%; justify-content:space-between;">' +
+        '<span><input type="checkbox" class="msheet-type" value="' + x.typeId + '"' + (preChecked ? ' checked' : '') + '> ' + escapeHtml(x.st.cfg.label) + '</span>' +
+        '<span class="field-hint" style="display:inline;">' + escapeHtml(statusLabel(x.st)) + '</span>' +
+        '</label>';
+    }).join('');
+  }
+
+  var checklistChecks = state.checklistItems.map(function(c){
+    return '<label class="tm-vehicle-chip"><input type="checkbox" class="msheet-checklist" value="' + c.id + '" checked>' + escapeHtml(c.label) + '</label>';
+  }).join('');
+
+  modal.innerHTML =
+    '<h3>Fiche d\'entretien <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:10px;">Choisis les interventions à préparer, ou présélectionne automatiquement celles à échéance proche.</div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Présélectionner les échéances à moins de</label><input type="number" id="msheetMonths" value="6" min="1" style="width:70px; display:inline-block;"> mois</div>' +
+      '<div class="field" style="display:flex; align-items:flex-end;"><button type="button" class="export-btn" id="msheetPreselectBtn">Appliquer</button></div>' +
+    '</div>' +
+    '<div class="field"><label>Interventions à inclure</label><div class="tm-vehicle-list" id="msheetTypesList" style="flex-direction:column; align-items:stretch;">' + typeChecks(null) + '</div></div>' +
+    '<div class="field"><label>Checklist de vérifications d\'usage</label><div class="tm-vehicle-list" id="msheetChecklistList">' + checklistChecks + '</div>' +
+      '<button type="button" class="export-btn" id="manageChecklistBtn" style="margin-top:8px;">⚙️ Gérer la checklist</button>' +
+    '</div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
+      '<button class="btn btn-primary" id="generateMaintenanceSheetBtn">Générer la fiche</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  document.getElementById('msheetPreselectBtn').onclick = function(){
+    var months = parseInt(document.getElementById('msheetMonths').value || '6', 10);
+    var list = document.getElementById('msheetTypesList');
+    if(list) list.innerHTML = typeChecks(months);
+  };
+
+  document.getElementById('manageChecklistBtn').onclick = function(){ openChecklistManagerModal(vehicleId); };
+
+  document.getElementById('generateMaintenanceSheetBtn').onclick = function(){
+    var selectedTypeIds = Array.prototype.filter.call(document.querySelectorAll('.msheet-type'), function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+    var selectedChecklistIds = Array.prototype.filter.call(document.querySelectorAll('.msheet-checklist'), function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+    if(!selectedTypeIds.length && !selectedChecklistIds.length){
+      showAlert('Sélectionne au moins une intervention ou un point de vérification.');
+      return;
+    }
+    closeModal();
+    generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistIds);
+  };
+}
+
+// ---- Modale : gestion de la checklist de vérifications d'usage (globale) ----
+function openChecklistManagerModal(returnToVehicleId){
+  var modal = document.getElementById('modal');
+
+  var rows = state.checklistItems.map(function(c){
+    return '<div class="ct-defect-row" data-checklist-id="' + c.id + '">' +
+      '<input type="text" class="checklist-item-label" value="' + escapeHtml(c.label) + '">' +
+      '<button type="button" class="trash-btn checklist-item-remove" title="Retirer" aria-label="Retirer ce point de vérification">' + trashSvg() + '</button>' +
+      '</div>';
+  }).join('');
+
+  modal.innerHTML =
+    '<h3>Checklist de vérifications d\'usage <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:10px;">Cette liste est partagée par tous les véhicules et réutilisée à chaque fiche d\'entretien.</div>' +
+    '<div id="checklistItemsList">' + rows + '</div>' +
+    '<button type="button" class="ct-add-defect-btn" id="addChecklistItemBtn" style="margin-top:10px;">+ Ajouter un point de vérification</button>' +
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      '<button class="btn btn-primary" id="cancelBtn">Fermer</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  var closeAndReturn = function(){
+    closeModal();
+    if(returnToVehicleId) openMaintenanceSheetModal(returnToVehicleId);
+  };
+  document.getElementById('closeModalBtn').onclick = closeAndReturn;
+  document.getElementById('cancelBtn').onclick = closeAndReturn;
+
+  function bindRemove(row){
+    var btn = row.querySelector('.checklist-item-remove');
+    if(btn) btn.onclick = async function(){
+      var id = row.getAttribute('data-checklist-id');
+      state.checklistItems = state.checklistItems.filter(function(c){ return c.id !== id; });
+      await persist();
+      row.remove();
+    };
+  }
+  Array.prototype.forEach.call(modal.querySelectorAll('.ct-defect-row'), bindRemove);
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.checklist-item-label'), function(inp){
+    inp.onchange = async function(){
+      var row = inp.closest('.ct-defect-row');
+      var id = row.getAttribute('data-checklist-id');
+      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
+      if(!item) return;
+      var newLabel = inp.value.trim();
+      if(!newLabel){ inp.value = item.label; return; }
+      item.label = newLabel;
+      await persist();
+    };
+  });
+
+  document.getElementById('addChecklistItemBtn').onclick = async function(){
+    var id = genId('chk');
+    state.checklistItems.push({ id: id, label: '' });
+    await persist();
+    var list = document.getElementById('checklistItemsList');
+    var row = document.createElement('div');
+    row.className = 'ct-defect-row';
+    row.setAttribute('data-checklist-id', id);
+    row.innerHTML = '<input type="text" class="checklist-item-label" value="">' +
+      '<button type="button" class="trash-btn checklist-item-remove" title="Retirer" aria-label="Retirer ce point de vérification">' + trashSvg() + '</button>';
+    list.appendChild(row);
+    bindRemove(row);
+    var newInput = row.querySelector('.checklist-item-label');
+    newInput.focus();
+    newInput.onchange = async function(){
+      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
+      if(!item) return;
+      var newLabel = newInput.value.trim();
+      if(!newLabel){ return; }
+      item.label = newLabel;
+      await persist();
+    };
+  };
+}
+
+function generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistIds){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var entries = state.entries[vehicleId] || [];
+  var now = new Date();
+  var nowStr = now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  var titre = [v.brand, v.model].filter(Boolean).join(' ') || v.name;
+
+  var html = '<div id="dossier-top"></div>';
+  html += '<div class="dossier-cover">';
+  html += '<h1>Fiche d\'entretien — ' + escapeHtml(titre) + '</h1>';
+  html += '<div class="dossier-sub">Préparée le ' + nowStr + (isTrailer(v) ? '' : ' — ' + fmtKm(v.mileage)) + '</div>';
+  html += '<a href="#dossier-bottom" class="jump-link dossier-jump">↓ Aller en bas (imprimer)</a>';
+  html += '</div>';
+
+  if(selectedTypeIds.length){
+    html += '<div class="dossier-section-title">Interventions à réaliser</div>';
+    selectedTypeIds.forEach(function(typeId){
+      var st = computeStatus(vehicleId, typeId);
+      if(!st) return;
+      var last = getLatestEntryFromList(entries, typeId);
+      var refNote = (v.intervals && v.intervals[typeId] && v.intervals[typeId].notes) || '';
+
+      html += '<div class="msheet-item">';
+      html += '<div class="msheet-item-title">🔧 ' + escapeHtml(st.cfg.label) + '</div>';
+
+      var deadlineParts = [];
+      if(st.needsCounterVisit){
+        deadlineParts.push(st.cvDeadlinePassed ? 'Contre-visite dépassée' : 'Contre-visite à faire sous ' + st.remainingDays + ' j');
+      } else {
+        if(st.remainingKm !== null) deadlineParts.push(st.remainingKm <= 0 ? 'Dépassé de ' + Math.abs(st.remainingKm) + ' km' : 'Échéance dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+        if(st.remainingDays !== null){
+          var deadlineDateApprox = last && last.date ? new Date(last.date) : null;
+          var dateStr = '';
+          if(deadlineDateApprox){
+            deadlineDateApprox.setDate(deadlineDateApprox.getDate() + Math.round((st.remainingDays)));
+          }
+          deadlineParts.push(st.remainingDays <= 0 ? 'Dépassé de ' + Math.abs(st.remainingDays) + ' j' : 'Échéance dans ' + st.remainingDays + ' j');
+        }
+      }
+      if(deadlineParts.length) html += '<div class="msheet-item-line">📅 ' + escapeHtml(deadlineParts.join(' ou ')) + '</div>';
+
+      if(refNote) html += '<div class="msheet-item-line">🧰 Fournitures : ' + escapeHtml(refNote) + '</div>';
+
+      if(last){
+        var lastLine = 'Dernière fois le ' + fmtDate(last.date) + (last.km != null ? ' à ' + fmtKm(last.km) : '') + (last.garage ? ' chez ' + last.garage : '');
+        html += '<div class="msheet-item-line">🕓 ' + escapeHtml(lastLine) + '</div>';
+        if(last.notes) html += '<div class="msheet-item-line msheet-item-quote">« ' + escapeHtml(last.notes) + ' »</div>';
+      } else {
+        html += '<div class="msheet-item-line">🕓 Aucune intervention de ce type enregistrée jusqu\'ici</div>';
+      }
+
+      html += '</div>';
+    });
+  }
+
+  if(selectedChecklistIds.length){
+    html += '<div class="dossier-section-title">Vérifications d\'usage</div>';
+    html += '<div class="msheet-checklist-print">';
+    selectedChecklistIds.forEach(function(id){
+      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
+      if(!item) return;
+      html += '<div class="msheet-checkbox-row"><span class="msheet-checkbox">☐</span>' + escapeHtml(item.label) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  var area = document.getElementById('dossierPrintArea');
+  area.innerHTML = html;
+  document.body.classList.add('dossier-mode');
+  window.scrollTo(0, 0);
+
+  var actionsHtml = '<div id="dossier-bottom">' +
+    '<div style="text-align:center; margin-bottom:10px;"><a href="#dossier-top" class="jump-link dossier-jump">↑ Remonter en haut</a></div>' +
+    '<div class="dossier-actions">' +
+      '<button class="btn btn-primary" id="dossierPrintNowBtn" style="width:auto; display:inline-block;">🖨 Imprimer / Enregistrer en PDF</button>' +
+      '<button class="btn btn-ghost" id="dossierBackBtn" style="width:auto; display:inline-block;">← Retour à l\'app</button>' +
+    '</div>' +
+  '</div>';
+  area.insertAdjacentHTML('beforeend', actionsHtml);
+  document.getElementById('dossierPrintNowBtn').onclick = function(){ window.print(); };
+  document.getElementById('dossierBackBtn').onclick = function(){
+    document.body.classList.remove('dossier-mode');
+    area.innerHTML = '';
+  };
+}
+
+function getLatestEntryFromList(entries, typeId){
+  var filtered = entries.filter(function(e){ return e.typeId === typeId; });
+  if(!filtered.length) return null;
+  filtered.sort(function(a, b){
+    if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return (b.km || 0) - (a.km || 0);
+  });
+  return filtered[0];
+}
+
 async function sendHistoryByEmail(vehicleId){
   var recipientInput = document.getElementById('email-recipient');
   var noteInput = document.getElementById('email-note');
@@ -1336,6 +1609,7 @@ async function loadState(){
   if(!state.order) state.order = [];
   if(!state.vehicles) state.vehicles = {};
   if(!state.entries) state.entries = {};
+  if(!state.checklistItems || !state.checklistItems.length) state.checklistItems = DEFAULT_CHECKLIST_ITEMS.slice();
 
   if(!activeVehicleId){
     activeVehicleId = DASHBOARD_ID;
@@ -1918,6 +2192,7 @@ function renderContent(){
   html += '<button class="export-btn" id="exportCsvBtn" title="Exporter en CSV">⬇ CSV</button>';
   html += '<button class="export-btn" id="emailHistoryBtn" title="Envoyer par email">✉️ Email</button>';
   html += '<button class="export-btn" id="saleDossierBtn" title="Générer un dossier de vente">🚗 Dossier de vente</button>';
+  html += '<button class="export-btn" id="maintenanceSheetBtn" title="Générer une fiche d\'entretien">🧾 Fiche d\'entretien</button>';
   html += '</span></h2>';
 
   html += '<div id="historyBody" style="display:' + (historyCollapsed ? 'none' : 'block') + ';">';
@@ -2125,6 +2400,9 @@ function renderContent(){
 
   var saleDossierBtn = document.getElementById('saleDossierBtn');
   if(saleDossierBtn) saleDossierBtn.onclick = function(){ openSaleDossierModal(activeVehicleId); };
+
+  var maintenanceSheetBtn = document.getElementById('maintenanceSheetBtn');
+  if(maintenanceSheetBtn) maintenanceSheetBtn.onclick = function(){ openMaintenanceSheetModal(activeVehicleId); };
 
   var addDocBtn = document.getElementById('addDocBtn');
   var docFileInput = document.getElementById('docFileInput');
