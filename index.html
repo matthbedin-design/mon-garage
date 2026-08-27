@@ -1362,20 +1362,25 @@ function generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistI
       html += '<div class="msheet-item-title">🔧 ' + escapeHtml(st.cfg.label) + '</div>';
 
       var deadlineParts = [];
+      var hasThresholdMs = !!(st.cfg.km || st.cfg.months);
       if(st.needsCounterVisit){
-        deadlineParts.push(st.cvDeadlinePassed ? 'Contre-visite dépassée' : 'Contre-visite à faire sous ' + st.remainingDays + ' j');
-      } else {
-        if(st.remainingKm !== null) deadlineParts.push(st.remainingKm <= 0 ? 'Dépassé de ' + Math.abs(st.remainingKm) + ' km' : 'Échéance dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
-        if(st.remainingDays !== null){
-          var deadlineDateApprox = last && last.date ? new Date(last.date) : null;
-          var dateStr = '';
-          if(deadlineDateApprox){
-            deadlineDateApprox.setDate(deadlineDateApprox.getDate() + Math.round((st.remainingDays)));
-          }
-          deadlineParts.push(st.remainingDays <= 0 ? 'Dépassé de ' + Math.abs(st.remainingDays) + ' j' : 'Échéance dans ' + st.remainingDays + ' j');
+        var cvDeadlineStrMs = (st.last && st.last.ct && st.last.ct.counterVisit && st.last.ct.counterVisit.deadline) ? fmtDate(st.last.ct.counterVisit.deadline) : null;
+        deadlineParts.push(cvDeadlineStrMs
+          ? (st.cvDeadlinePassed ? 'Contre-visite dépassée depuis le ' + cvDeadlineStrMs : 'Contre-visite à faire avant le ' + cvDeadlineStrMs)
+          : (st.cvDeadlinePassed ? 'Contre-visite dépassée' : 'Contre-visite en attente'));
+      } else if(hasThresholdMs && st.last){
+        if(st.cfg.km){
+          var kmThresholdMs = (st.last.km || 0) + st.cfg.km;
+          deadlineParts.push(kmThresholdMs.toLocaleString('fr-FR') + ' km');
+        }
+        if(st.cfg.months && st.last.date){
+          var dateThresholdMs = new Date(st.last.date);
+          dateThresholdMs.setMonth(dateThresholdMs.getMonth() + st.cfg.months);
+          deadlineParts.push('le ' + dateThresholdMs.toLocaleDateString('fr-FR'));
         }
       }
-      if(deadlineParts.length) html += '<div class="msheet-item-line">📅 ' + escapeHtml(deadlineParts.join(' ou ')) + '</div>';
+      var deadlineLabel = st.isOverdue ? 'Échéance dépassée : ' : 'À ne pas dépasser : ';
+      if(deadlineParts.length) html += '<div class="msheet-item-line">📅 ' + escapeHtml(st.needsCounterVisit ? deadlineParts.join('') : deadlineLabel + deadlineParts.join(' ou ')) + '</div>';
 
       if(refNote) html += '<div class="msheet-item-line">🧰 Fournitures : ' + escapeHtml(refNote) + '</div>';
 
@@ -2092,8 +2097,7 @@ function renderContent(){
       var st = computeStatus(activeVehicleId, typeId);
       if(!st) return;
 
-      var barColor = 'var(--green)';
-      if(st.isOverdue) barColor = 'var(--red)';
+      var hasThreshold = !!(st.cfg.km || st.cfg.months);
       var barColor = 'var(--green)';
       if(st.isOverdue) barColor = 'var(--red)';
       else if(st.isWarning) barColor = 'var(--yellow)';
@@ -2103,26 +2107,30 @@ function renderContent(){
       if(st.last){
         if(st.needsCounterVisit){
           var cvDeadlinePassed = !!st.cvDeadlinePassed;
-          if(st.last.ct && st.last.ct.result === 'ko_critical'){
-            statusText = cvDeadlinePassed
-              ? 'Défaillance critique — contre-visite dépassée (' + Math.abs(st.remainingDays) + ' j)'
-              : 'Défaillance critique — contre-visite sous ' + st.remainingDays + ' j';
-          } else {
-            statusText = cvDeadlinePassed
-              ? 'Contre-visite dépassée (' + Math.abs(st.remainingDays) + ' j)'
-              : 'Contre-visite dans ' + st.remainingDays + ' j';
-          }
+          var cvDeadlineStr = (st.last.ct && st.last.ct.counterVisit && st.last.ct.counterVisit.deadline) ? fmtDate(st.last.ct.counterVisit.deadline) : null;
+          var cvPrefix = (st.last.ct && st.last.ct.result === 'ko_critical') ? 'Défaillance critique — contre-visite ' : 'Contre-visite ';
+          statusText = cvDeadlineStr
+            ? (cvPrefix + (cvDeadlinePassed ? 'dépassée depuis le ' + cvDeadlineStr : 'à faire avant le ' + cvDeadlineStr))
+            : (cvPrefix + (cvDeadlinePassed ? 'dépassée' : 'en attente'));
+        } else if(!hasThreshold){
+          // Type suivi sans seuil configuré ("toujours afficher") : simple repère
+          // informatif, pas une échéance — couleur neutre, pas de barre de jauge.
+          statusText = 'Dernière intervention : ' + fmtDate(st.last.date);
+          barColor = 'var(--text)';
         } else {
+          // Échéance exprimée en valeur absolue (km/date à ne pas dépasser),
+          // plus parlante qu'un compte à rebours pour anticiper.
           var parts = [];
-          if(st.remainingKm !== null){
-            if(st.remainingKm <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingKm) + ' km');
-            else parts.push('dans ' + st.remainingKm.toLocaleString('fr-FR') + ' km');
+          if(st.cfg.km){
+            var kmThreshold = (st.last.km || 0) + st.cfg.km;
+            parts.push(kmThreshold.toLocaleString('fr-FR') + ' km');
           }
-          if(st.remainingDays !== null){
-            if(st.remainingDays <= 0) parts.push('Dépassé de ' + Math.abs(st.remainingDays) + ' j');
-            else parts.push('dans ' + st.remainingDays + ' j');
+          if(st.cfg.months && st.last.date){
+            var dateThreshold = new Date(st.last.date);
+            dateThreshold.setMonth(dateThreshold.getMonth() + st.cfg.months);
+            parts.push('le ' + dateThreshold.toLocaleDateString('fr-FR'));
           }
-          statusText = parts.join(' ou ');
+          statusText = (st.isOverdue ? 'Échéance dépassée : ' : 'Prochaine échéance : ') + parts.join(' ou ');
         }
       }
 
@@ -2133,9 +2141,11 @@ function renderContent(){
       html += '</div>';
       var typeNotes = (v.intervals && v.intervals[st.cfg.id] && v.intervals[st.cfg.id].notes) || '';
       if(typeNotes) html += '<div class="gauge-ref">📎 ' + escapeHtml(typeNotes) + '</div>';
-      html += '<div class="gauge-track">';
-      html += '<div class="fill" style="width:' + st.pct + '%; background:' + barColor + ';"></div>';
-      html += '</div>';
+      if(hasThreshold || st.needsCounterVisit){
+        html += '<div class="gauge-track">';
+        html += '<div class="fill" style="width:' + st.pct + '%; background:' + barColor + ';"></div>';
+        html += '</div>';
+      }
       html += '</div>';
     });
   }
