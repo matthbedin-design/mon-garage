@@ -64,6 +64,7 @@
   .cost-chart-btn:disabled{ opacity:.35; cursor:default; }
   .cost-chart-wrap{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 4px; }
   .cost-chart-svg{ width:100%; height:auto; display:block; }
+  .cost-chart-bar-group:hover rect{ opacity:.8; }
   .cost-chart-legend{ text-align:center; font-size:12px; color:var(--text-muted); margin-top:8px; }
   .hist-filters{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:12px; }
   .hist-filters select, .hist-filters input[type=text], .hist-filters input[type=date]{ background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:7px 9px; border-radius:8px; }
@@ -847,9 +848,11 @@ function renderCostChart(byYearAll, yearsCount, accentColor){
     var barH = maxVal > 0 ? (d.total / maxVal) * chartH : 0;
     var x = startX + i * (barW + gap);
     var y = pad.top + chartH - barH;
+    svg += '<g class="cost-chart-bar-group" data-year="' + d.year + '" style="cursor:pointer;">';
     svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(1, barH).toFixed(1) + '" rx="4" style="fill:' + accentColor + ';" />';
     svg += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + Math.max(pad.top - 6, y - 6).toFixed(1) + '" text-anchor="middle" style="font-size:10.5px; fill:var(--text); font-family:\'JetBrains Mono\',monospace;">' + Math.round(d.total) + '€</text>';
     svg += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - pad.bottom + 16).toFixed(1) + '" text-anchor="middle" style="font-size:11px; fill:var(--text-muted); font-family:\'Oswald\',sans-serif;">' + d.year + '</text>';
+    svg += '</g>';
   });
 
   svg += '</svg>';
@@ -2649,6 +2652,22 @@ function renderContent(){
     costChartYears[activeVehicleId] = (costChartYears[activeVehicleId] || 10) + 1;
     renderContent();
   };
+
+  Array.prototype.forEach.call(content.querySelectorAll('.cost-chart-bar-group'), function(g){
+    g.addEventListener('click', function(){
+      var year = g.getAttribute('data-year');
+      historyFilters.category = 'all';
+      historyFilters.garage = '';
+      historyFilters.search = '';
+      historyFilters.invoiceOnly = false;
+      historyFilters.dateFrom = year + '-01-01';
+      historyFilters.dateTo = year + '-12-31';
+      historySectionCollapsed[activeVehicleId] = false;
+      renderContent();
+      var histSection = document.getElementById('historique-section');
+      if(histSection) histSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 
   var printBtn = document.getElementById('printBtn');
   if(printBtn) printBtn.onclick = printVehicle;
