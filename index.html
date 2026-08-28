@@ -251,6 +251,13 @@
   .ct-defects-summary{ font-size:11.5px; color:var(--text-muted); margin-top:2px; }
   .ct-section{ margin-top:4px; padding-top:14px; border-top:1px dashed var(--border); }
   .ct-defect-row{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .checklist-item-theme{ width:130px; flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12px; padding:8px 9px; border-radius:8px; }
+  .checklist-theme-block{ margin-bottom:12px; }
+  .checklist-theme-title{ font-family:'Oswald',sans-serif; font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--yellow); margin-bottom:6px; }
+  .session-check-row{ border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:8px; }
+  .session-check-row:last-child{ border-bottom:none; }
+  .session-anomaly-input{ width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:12.5px; padding:7px 9px; border-radius:7px; margin-top:4px; }
+  .session-done-form{ background:var(--surface-2); border-radius:9px; padding:10px; }
   .ct-defect-row input[type=text]{ flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 10px; border-radius:8px; }
   .ct-defect-row input[type=checkbox]{ width:16px;height:16px; accent-color:var(--green); flex:none; }
   .ct-defect-row .trash-btn{ flex:none; }
@@ -406,14 +413,18 @@ var HISTORY_CATEGORIES = [
 ];
 
 var DEFAULT_CHECKLIST_ITEMS = [
-  { id: 'chk_essuie_glaces', label: 'État et fonctionnement des balais d\'essuie-glace' },
-  { id: 'chk_feux', label: 'Fonctionnement des feux (avant, arrière, stop, clignotants)' },
-  { id: 'chk_plaquettes_av', label: 'Usure des plaquettes de frein AV' },
-  { id: 'chk_plaquettes_ar', label: 'Usure des plaquettes de frein AR' },
-  { id: 'chk_niveaux', label: 'Niveaux (huile, liquide de refroidissement, liquide de frein, lave-glace)' },
-  { id: 'chk_pneus', label: 'Pression et état des pneus (usure, hernies)' },
-  { id: 'chk_batterie', label: 'État de la batterie et des bornes' },
-  { id: 'chk_courroies', label: 'État visuel des courroies' }
+  { id: 'chk_essuie_glaces', label: 'État et fonctionnement des balais d\'essuie-glace', theme: 'Visibilité' },
+  { id: 'chk_feux', label: 'Fonctionnement des feux (avant, arrière, stop, clignotants)', theme: 'Visibilité' },
+  { id: 'chk_plaquettes_av', label: 'État des plaquettes AV', theme: 'Freinage' },
+  { id: 'chk_plaquettes_ar', label: 'État des plaquettes AR', theme: 'Freinage' },
+  { id: 'chk_disques', label: 'État des disques de frein', theme: 'Freinage' },
+  { id: 'chk_liquide_refroidissement', label: 'Liquide de refroidissement (niveau, couleur, pH)', theme: 'Niveaux et étanchéité' },
+  { id: 'chk_liquide_frein', label: 'Liquide de frein (niveau)', theme: 'Niveaux et étanchéité' },
+  { id: 'chk_lave_glace', label: 'Lave-glace (niveau)', theme: 'Niveaux et étanchéité' },
+  { id: 'chk_huile', label: 'Niveau d\'huile moteur', theme: 'Niveaux et étanchéité' },
+  { id: 'chk_pneus', label: 'Pression et état des pneus (usure, hernies)', theme: 'Pneumatiques' },
+  { id: 'chk_batterie', label: 'État de la batterie et des bornes', theme: 'Électrique' },
+  { id: 'chk_courroies', label: 'État visuel des courroies', theme: 'Moteur' }
 ];
 
 var sb = null;
@@ -1179,6 +1190,17 @@ async function loadDossierInvoiceImages(entries){
   }
 }
 
+function groupByTheme(items){
+  var groups = {};
+  var order = [];
+  items.forEach(function(c){
+    var theme = c.theme || 'Autres vérifications';
+    if(!groups[theme]){ groups[theme] = []; order.push(theme); }
+    groups[theme].push(c);
+  });
+  return order.map(function(theme){ return { theme: theme, items: groups[theme] }; });
+}
+
 // ---- Modale : configuration et génération de la fiche d'entretien à faire ----
 function openMaintenanceSheetModal(vehicleId){
   var v = state.vehicles[vehicleId];
@@ -1214,8 +1236,11 @@ function openMaintenanceSheetModal(vehicleId){
     }).join('');
   }
 
-  var checklistChecks = state.checklistItems.map(function(c){
-    return '<label class="tm-vehicle-chip"><input type="checkbox" class="msheet-checklist" value="' + c.id + '" checked>' + escapeHtml(c.label) + '</label>';
+  var checklistChecks = groupByTheme(state.checklistItems).map(function(grp){
+    var itemsHtml = grp.items.map(function(c){
+      return '<label class="tm-vehicle-chip"><input type="checkbox" class="msheet-checklist" value="' + c.id + '" checked>' + escapeHtml(c.label) + '</label>';
+    }).join('');
+    return '<div class="checklist-theme-block"><div class="checklist-theme-title">' + escapeHtml(grp.theme) + '</div><div class="tm-vehicle-list">' + itemsHtml + '</div></div>';
   }).join('');
 
   modal.innerHTML =
@@ -1246,13 +1271,33 @@ function openMaintenanceSheetModal(vehicleId){
 
   document.getElementById('manageChecklistBtn').onclick = function(){ openChecklistManagerModal(vehicleId); };
 
-  document.getElementById('generateMaintenanceSheetBtn').onclick = function(){
+  document.getElementById('generateMaintenanceSheetBtn').onclick = async function(){
     var selectedTypeIds = Array.prototype.filter.call(document.querySelectorAll('.msheet-type'), function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
     var selectedChecklistIds = Array.prototype.filter.call(document.querySelectorAll('.msheet-checklist'), function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
     if(!selectedTypeIds.length && !selectedChecklistIds.length){
-      showAlert('Sélectionne au moins une intervention ou un point de vérification.');
+      await showAlert('Sélectionne au moins une intervention ou un point de vérification.');
       return;
     }
+
+    // Crée une session "planifiée" pour garder trace de cette fiche : coche des
+    // vérifications, anomalies, et interventions marquées réalisées viendront
+    // s'y rattacher au fil de l'entretien réel.
+    if(!state.sessions[vehicleId]) state.sessions[vehicleId] = [];
+    var session = {
+      id: genId('sess'),
+      date: new Date().toISOString().substring(0, 10),
+      status: 'planned',
+      plannedTypeIds: selectedTypeIds,
+      checklistItemIds: selectedChecklistIds,
+      checklistResults: selectedChecklistIds.map(function(id){ return { itemId: id, checked: false, anomaly: null }; }),
+      entryIds: [],
+      sessionNotes: '',
+      createdAt: new Date().toISOString()
+    };
+    state.sessions[vehicleId].push(session);
+    logEvent(vehicleId, 'Fiche d\'entretien créée (' + selectedTypeIds.length + ' intervention(s), ' + selectedChecklistIds.length + ' vérification(s))');
+    await persist();
+
     closeModal();
     generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistIds);
   };
@@ -1262,16 +1307,23 @@ function openMaintenanceSheetModal(vehicleId){
 function openChecklistManagerModal(returnToVehicleId){
   var modal = document.getElementById('modal');
 
+  var themesSet = {};
+  state.checklistItems.forEach(function(c){ if(c.theme) themesSet[c.theme] = true; });
+  var themeOptionsHtml = Object.keys(themesSet).sort(function(a,b){ return a.localeCompare(b, 'fr'); })
+    .map(function(t){ return '<option value="' + escapeHtml(t) + '">'; }).join('');
+
   var rows = state.checklistItems.map(function(c){
-    return '<div class="ct-defect-row" data-checklist-id="' + c.id + '">' +
-      '<input type="text" class="checklist-item-label" value="' + escapeHtml(c.label) + '">' +
+    return '<div class="ct-defect-row checklist-row" data-checklist-id="' + c.id + '">' +
+      '<input type="text" class="checklist-item-theme" list="checklistThemesList" value="' + escapeHtml(c.theme || '') + '" placeholder="Thème (ex : Freinage)">' +
+      '<input type="text" class="checklist-item-label" value="' + escapeHtml(c.label) + '" placeholder="Point de vérification">' +
       '<button type="button" class="trash-btn checklist-item-remove" title="Retirer" aria-label="Retirer ce point de vérification">' + trashSvg() + '</button>' +
       '</div>';
   }).join('');
 
   modal.innerHTML =
     '<h3>Checklist de vérifications d\'usage <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
-    '<div class="field-hint" style="margin-bottom:10px;">Cette liste est partagée par tous les véhicules et réutilisée à chaque fiche d\'entretien.</div>' +
+    '<div class="field-hint" style="margin-bottom:10px;">Cette liste est partagée par tous les véhicules et réutilisée à chaque fiche d\'entretien. Groupe les points par thème pour une lecture plus claire (ex : Freinage, Niveaux et étanchéité).</div>' +
+    '<datalist id="checklistThemesList">' + themeOptionsHtml + '</datalist>' +
     '<div id="checklistItemsList">' + rows + '</div>' +
     '<button type="button" class="ct-add-defect-btn" id="addChecklistItemBtn" style="margin-top:10px;">+ Ajouter un point de vérification</button>' +
     '<div class="modal-actions" style="margin-top:16px;">' +
@@ -1286,52 +1338,49 @@ function openChecklistManagerModal(returnToVehicleId){
   document.getElementById('closeModalBtn').onclick = closeAndReturn;
   document.getElementById('cancelBtn').onclick = closeAndReturn;
 
-  function bindRemove(row){
-    var btn = row.querySelector('.checklist-item-remove');
-    if(btn) btn.onclick = async function(){
+  function bindRow(row){
+    var removeBtn = row.querySelector('.checklist-item-remove');
+    if(removeBtn) removeBtn.onclick = async function(){
       var id = row.getAttribute('data-checklist-id');
       state.checklistItems = state.checklistItems.filter(function(c){ return c.id !== id; });
       await persist();
       row.remove();
     };
-  }
-  Array.prototype.forEach.call(modal.querySelectorAll('.ct-defect-row'), bindRemove);
-
-  Array.prototype.forEach.call(modal.querySelectorAll('.checklist-item-label'), function(inp){
-    inp.onchange = async function(){
-      var row = inp.closest('.ct-defect-row');
+    var labelInput = row.querySelector('.checklist-item-label');
+    if(labelInput) labelInput.onchange = async function(){
       var id = row.getAttribute('data-checklist-id');
       var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
       if(!item) return;
-      var newLabel = inp.value.trim();
-      if(!newLabel){ inp.value = item.label; return; }
+      var newLabel = labelInput.value.trim();
+      if(!newLabel){ labelInput.value = item.label; return; }
       item.label = newLabel;
       await persist();
     };
-  });
+    var themeInput = row.querySelector('.checklist-item-theme');
+    if(themeInput) themeInput.onchange = async function(){
+      var id = row.getAttribute('data-checklist-id');
+      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
+      if(!item) return;
+      item.theme = themeInput.value.trim() || null;
+      await persist();
+    };
+  }
+  Array.prototype.forEach.call(modal.querySelectorAll('.checklist-row'), bindRow);
 
   document.getElementById('addChecklistItemBtn').onclick = async function(){
     var id = genId('chk');
-    state.checklistItems.push({ id: id, label: '' });
+    state.checklistItems.push({ id: id, label: '', theme: null });
     await persist();
     var list = document.getElementById('checklistItemsList');
     var row = document.createElement('div');
-    row.className = 'ct-defect-row';
+    row.className = 'ct-defect-row checklist-row';
     row.setAttribute('data-checklist-id', id);
-    row.innerHTML = '<input type="text" class="checklist-item-label" value="">' +
+    row.innerHTML = '<input type="text" class="checklist-item-theme" list="checklistThemesList" value="" placeholder="Thème (ex : Freinage)">' +
+      '<input type="text" class="checklist-item-label" value="" placeholder="Point de vérification">' +
       '<button type="button" class="trash-btn checklist-item-remove" title="Retirer" aria-label="Retirer ce point de vérification">' + trashSvg() + '</button>';
     list.appendChild(row);
-    bindRemove(row);
-    var newInput = row.querySelector('.checklist-item-label');
-    newInput.focus();
-    newInput.onchange = async function(){
-      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
-      if(!item) return;
-      var newLabel = newInput.value.trim();
-      if(!newLabel){ return; }
-      item.label = newLabel;
-      await persist();
-    };
+    bindRow(row);
+    row.querySelector('.checklist-item-label').focus();
   };
 }
 
@@ -1398,13 +1447,15 @@ function generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistI
 
   if(selectedChecklistIds.length){
     html += '<div class="dossier-section-title">Vérifications d\'usage</div>';
-    html += '<div class="msheet-checklist-print">';
-    selectedChecklistIds.forEach(function(id){
-      var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
-      if(!item) return;
-      html += '<div class="msheet-checkbox-row"><span class="msheet-checkbox">☐</span>' + escapeHtml(item.label) + '</div>';
+    var selectedChecklistObjs = selectedChecklistIds.map(function(id){ return state.checklistItems.filter(function(c){ return c.id === id; })[0]; }).filter(Boolean);
+    groupByTheme(selectedChecklistObjs).forEach(function(grp){
+      html += '<div class="checklist-theme-title" style="margin-top:10px;">' + escapeHtml(grp.theme) + '</div>';
+      html += '<div class="msheet-checklist-print">';
+      grp.items.forEach(function(item){
+        html += '<div class="msheet-checkbox-row"><span class="msheet-checkbox">☐</span>' + escapeHtml(item.label) + '</div>';
+      });
+      html += '</div>';
     });
-    html += '</div>';
   }
 
   var area = document.getElementById('dossierPrintArea');
@@ -1435,6 +1486,221 @@ function getLatestEntryFromList(entries, typeId){
     return (b.km || 0) - (a.km || 0);
   });
   return filtered[0];
+}
+
+// ---- Modale : liste des fiches d'entretien (sessions) d'un véhicule ----
+function openSessionsListModal(vehicleId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var modal = document.getElementById('modal');
+  var sessions = (state.sessions[vehicleId] || []).slice().sort(function(a, b){ return a.date < b.date ? 1 : -1; });
+  var planned = sessions.filter(function(s){ return s.status === 'planned'; });
+  var completed = sessions.filter(function(s){ return s.status === 'completed'; });
+
+  function sessionRow(s){
+    var typeLabels = s.plannedTypeIds.map(function(id){
+      var t = state.types.filter(function(x){ return x.id === id; })[0];
+      return t ? t.label : id;
+    }).join(', ');
+    return '<div class="history-row" data-session-id="' + s.id + '" style="cursor:pointer;">' +
+      '<div class="history-main">' +
+      '<div class="history-type">📋 ' + fmtDate(s.date) + '</div>' +
+      (typeLabels ? '<div class="history-notes">' + escapeHtml(typeLabels) + '</div>' : '') +
+      '<div class="history-notes">' + s.entryIds.length + ' / ' + s.plannedTypeIds.length + ' intervention(s) réalisée(s)' + (s.checklistItemIds.length ? ' · ' + s.checklistItemIds.length + ' vérification(s)' : '') + '</div>' +
+      '</div></div>';
+  }
+
+  var html = '<h3>Fiches d\'entretien <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>';
+  if(planned.length){
+    html += '<div class="field-hint" style="margin-bottom:8px;">En cours</div>' + planned.map(sessionRow).join('');
+  }
+  if(completed.length){
+    html += '<div class="field-hint" style="margin:14px 0 8px;">Terminées</div>' + completed.map(sessionRow).join('');
+  }
+  if(!sessions.length){
+    html += '<div class="empty-state">Aucune fiche d\'entretien pour ce véhicule.</div>';
+  }
+  html += '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-primary" id="cancelBtn">Fermer</button></div>';
+
+  modal.innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  Array.prototype.forEach.call(modal.querySelectorAll('[data-session-id]'), function(row){
+    row.onclick = function(){ openSessionDetailModal(vehicleId, row.getAttribute('data-session-id')); };
+  });
+}
+
+// ---- Modale : détail d'une fiche d'entretien — checklist interactive et
+// interventions à marquer réalisées (créent une vraie ligne d'historique) ----
+function openSessionDetailModal(vehicleId, sessionId){
+  var v = state.vehicles[vehicleId];
+  var sessions = state.sessions[vehicleId] || [];
+  var session = sessions.filter(function(s){ return s.id === sessionId; })[0];
+  if(!v || !session) return;
+  var modal = document.getElementById('modal');
+  var entries = state.entries[vehicleId] || [];
+  var readOnly = session.status === 'completed';
+
+  var checklistObjs = session.checklistItemIds.map(function(id){ return state.checklistItems.filter(function(c){ return c.id === id; })[0]; }).filter(Boolean);
+  var checklistHtml = groupByTheme(checklistObjs).map(function(grp){
+    var itemsHtml = grp.items.map(function(item){
+      var res = session.checklistResults.filter(function(r){ return r.itemId === item.id; })[0] || { checked: false, anomaly: null };
+      return '<div class="session-check-row" data-item-id="' + item.id + '">' +
+        '<label class="type-row-main" style="border:none; padding:6px 0;"><input type="checkbox" class="session-check-box"' + (res.checked ? ' checked' : '') + (readOnly ? ' disabled' : '') + '><span class="name">' + escapeHtml(item.label) + '</span></label>' +
+        '<input type="text" class="session-anomaly-input" placeholder="Anomalie / remarque (optionnel)" value="' + escapeHtml(res.anomaly || '') + '"' + (readOnly ? ' disabled' : '') + '>' +
+        (readOnly ? '' : '<button type="button" class="link-btn session-anomaly-to-entry" data-item-id="' + item.id + '">+ Créer une intervention à partir de cette remarque</button>') +
+        '</div>';
+    }).join('');
+    return '<div class="checklist-theme-block"><div class="checklist-theme-title">' + escapeHtml(grp.theme) + '</div>' + itemsHtml + '</div>';
+  }).join('');
+
+  var typesHtml = session.plannedTypeIds.map(function(typeId){
+    var t = state.types.filter(function(x){ return x.id === typeId; })[0];
+    var label = t ? t.label : typeId;
+    var doneEntry = entries.filter(function(e){ return e.sessionId === session.id && e.typeId === typeId; })[0];
+    if(doneEntry){
+      return '<div class="msheet-item" style="border-left-color:var(--green);">' +
+        '<div class="msheet-item-title">✅ ' + escapeHtml(label) + ' — réalisée</div>' +
+        '<div class="msheet-item-line">Le ' + fmtDate(doneEntry.date) + (doneEntry.km != null ? ' à ' + fmtKm(doneEntry.km) : '') + (doneEntry.cost != null ? ' · ' + fmtEuro(doneEntry.cost) : '') + '</div>' +
+        '</div>';
+    }
+    if(readOnly){
+      return '<div class="msheet-item"><div class="msheet-item-title">⏳ ' + escapeHtml(label) + ' — non réalisée</div></div>';
+    }
+    return '<div class="msheet-item">' +
+      '<div class="msheet-item-title">🔧 ' + escapeHtml(label) + '</div>' +
+      '<button type="button" class="export-btn session-mark-done-btn" data-type="' + typeId + '">✅ Marquer réalisée</button>' +
+      '<div class="session-done-form" id="doneForm-' + typeId + '" style="display:none; margin-top:10px;">' +
+        '<div class="row2">' +
+          '<div class="field"><label>Date</label><input type="date" class="session-done-date" value="' + new Date().toISOString().substring(0, 10) + '"></div>' +
+          (isTrailer(v) ? '' : '<div class="field"><label>Kilométrage</label><input type="number" class="session-done-km" value="' + (v.mileage || 0) + '"></div>') +
+        '</div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Coût (€)</label><input type="number" step="0.01" min="0" class="session-done-cost"></div>' +
+          '<div class="field"><label>Garage</label><input type="text" class="session-done-garage"></div>' +
+        '</div>' +
+        '<div class="field"><label>Notes</label><textarea class="session-done-notes"></textarea></div>' +
+        '<button type="button" class="btn btn-primary session-save-done-btn" data-type="' + typeId + '" style="width:auto; display:inline-block;">Enregistrer cette intervention</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  modal.innerHTML =
+    '<h3>Fiche du ' + fmtDate(session.date) + (readOnly ? ' (terminée)' : '') + ' <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    (session.plannedTypeIds.length ? '<div class="dossier-section-title" style="margin-top:0;">Interventions</div>' + typesHtml : '') +
+    (checklistObjs.length ? '<div class="dossier-section-title">Vérifications d\'usage</div>' + checklistHtml : '') +
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      (!readOnly ? '<button class="btn btn-danger" id="deleteSessionBtn">Supprimer la fiche</button>' : '') +
+      '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
+      (!readOnly ? '<button class="btn btn-primary" id="completeSessionBtn">Terminer la session</button>' : '') +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.session-check-row'), function(row){
+    var itemId = row.getAttribute('data-item-id');
+    var checkbox = row.querySelector('.session-check-box');
+    var anomalyInput = row.querySelector('.session-anomaly-input');
+    if(readOnly) return;
+    function saveResult(){
+      var res = session.checklistResults.filter(function(r){ return r.itemId === itemId; })[0];
+      if(!res){ res = { itemId: itemId, checked: false, anomaly: null }; session.checklistResults.push(res); }
+      res.checked = checkbox.checked;
+      res.anomaly = anomalyInput.value.trim() || null;
+      persist();
+    }
+    checkbox.onchange = saveResult;
+    anomalyInput.onchange = saveResult;
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.session-anomaly-to-entry'), function(btn){
+    btn.onclick = function(){
+      var itemId = btn.getAttribute('data-item-id');
+      var item = state.checklistItems.filter(function(c){ return c.id === itemId; })[0];
+      var row = modal.querySelector('.session-check-row[data-item-id="' + itemId + '"]');
+      var noteText = row ? row.querySelector('.session-anomaly-input').value.trim() : '';
+      closeModal();
+      activeVehicleId = vehicleId;
+      openEntryModal(null);
+      var notesField = document.getElementById('f-notes');
+      if(notesField) notesField.value = (item ? item.label + ' — ' : '') + noteText;
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.session-mark-done-btn'), function(btn){
+    btn.onclick = function(){
+      var typeId = btn.getAttribute('data-type');
+      var form = document.getElementById('doneForm-' + typeId);
+      if(form) form.style.display = (form.style.display === 'none') ? 'block' : 'none';
+    };
+  });
+
+  Array.prototype.forEach.call(modal.querySelectorAll('.session-save-done-btn'), function(btn){
+    btn.onclick = async function(){
+      var typeId = btn.getAttribute('data-type');
+      var form = document.getElementById('doneForm-' + typeId);
+      var dateEl = form.querySelector('.session-done-date');
+      var kmEl = form.querySelector('.session-done-km');
+      var costInputEl = form.querySelector('.session-done-cost');
+      var garageEl = form.querySelector('.session-done-garage');
+      var notesEl = form.querySelector('.session-done-notes');
+
+      var date = dateEl.value;
+      if(!date){ await showAlert('Merci de renseigner une date.'); return; }
+      var km = kmEl ? parseInt(kmEl.value || '0', 10) : null;
+      if(kmEl && (isNaN(km) || km < 0)){ await showAlert('Le kilométrage doit être un nombre positif.'); return; }
+      var cost = costInputEl.value === '' ? null : parseFloat(costInputEl.value);
+
+      var vv = state.vehicles[vehicleId];
+      var now = new Date().toISOString();
+      var newEntry = {
+        id: genId('e'),
+        typeId: typeId,
+        date: date,
+        km: km,
+        notes: notesEl.value.trim(),
+        cost: cost,
+        garage: garageEl.value.trim() || null,
+        sessionId: session.id,
+        documents: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      var list = state.entries[vehicleId] || [];
+      list.push(newEntry);
+      state.entries[vehicleId] = list;
+      session.entryIds.push(newEntry.id);
+      if(vv && km != null && km > vv.mileage) vv.mileage = km;
+
+      var tObj = state.types.filter(function(t){ return t.id === typeId; })[0];
+      logEvent(vehicleId, 'Intervention réalisée (fiche du ' + fmtDate(session.date) + ') : ' + (tObj ? tObj.label : typeId));
+
+      await persist();
+      openSessionDetailModal(vehicleId, session.id);
+    };
+  });
+
+  var completeBtn = document.getElementById('completeSessionBtn');
+  if(completeBtn) completeBtn.onclick = async function(){
+    session.status = 'completed';
+    await persist();
+    closeModal();
+    renderContent();
+  };
+
+  var deleteSessionBtn = document.getElementById('deleteSessionBtn');
+  if(deleteSessionBtn) deleteSessionBtn.onclick = async function(){
+    var ok = await showConfirm('Supprimer cette fiche ? Les interventions déjà enregistrées à partir d\'elle resteront dans l\'historique.', 'Supprimer');
+    if(!ok) return;
+    state.sessions[vehicleId] = state.sessions[vehicleId].filter(function(s){ return s.id !== session.id; });
+    await persist();
+    closeModal();
+    renderContent();
+  };
 }
 
 async function sendHistoryByEmail(vehicleId){
@@ -1615,6 +1881,7 @@ async function loadState(){
   if(!state.vehicles) state.vehicles = {};
   if(!state.entries) state.entries = {};
   if(!state.checklistItems || !state.checklistItems.length) state.checklistItems = DEFAULT_CHECKLIST_ITEMS.slice();
+  if(!state.sessions) state.sessions = {};
 
   if(!activeVehicleId){
     activeVehicleId = DASHBOARD_ID;
@@ -2069,8 +2336,14 @@ function renderContent(){
   // Section 1 : Échéances à venir (repliable — pratique sur mobile pour
   // atteindre l'historique sans tout dérouler)
   var isCollapsed = !!gaugesSectionCollapsed[activeVehicleId];
+  var plannedCount = (state.sessions[activeVehicleId] || []).filter(function(s){ return s.status === 'planned'; }).length;
   html += '<section>';
-  html += '<h2 class="section-title collapsible-title" id="gaugesToggle"><span>Échéances d\'entretien</span><span class="collapse-chevron">' + (isCollapsed ? '▸' : '▾') + '</span></h2>';
+  html += '<h2 class="section-title">';
+  html += '<span class="collapsible-title-inline" id="gaugesToggle"><span>Échéances d\'entretien</span><span class="collapse-chevron">' + (isCollapsed ? '▸' : '▾') + '</span></span>';
+  html += '<span class="export-actions">';
+  if(plannedCount) html += '<button class="export-btn" id="openSessionsBtn" title="Voir les fiches en cours">📋 ' + plannedCount + ' en cours</button>';
+  html += '<button class="export-btn" id="maintenanceSheetBtn" title="Générer une fiche d\'entretien">🧾 Fiche d\'entretien</button>';
+  html += '</span></h2>';
   html += '<div id="gaugesBody" style="display:' + (isCollapsed ? 'none' : 'block') + ';">';
 
   var enabled = v.enabledTypes || [];
@@ -2202,7 +2475,6 @@ function renderContent(){
   html += '<button class="export-btn" id="exportCsvBtn" title="Exporter en CSV">⬇ CSV</button>';
   html += '<button class="export-btn" id="emailHistoryBtn" title="Envoyer par email">✉️ Email</button>';
   html += '<button class="export-btn" id="saleDossierBtn" title="Générer un dossier de vente">🚗 Dossier de vente</button>';
-  html += '<button class="export-btn" id="maintenanceSheetBtn" title="Générer une fiche d\'entretien">🧾 Fiche d\'entretien</button>';
   html += '</span></h2>';
 
   html += '<div id="historyBody" style="display:' + (historyCollapsed ? 'none' : 'block') + ';">';
@@ -2286,6 +2558,9 @@ function renderContent(){
       }
       if(entry.invoiceDoc){
         html += '<div class="ct-defects-summary">📎 ' + escapeHtml(entry.invoiceDoc.name) + (entry.batchId ? ' (facture partagée)' : '') + '</div>';
+      }
+      if(entry.sessionId){
+        html += '<button type="button" class="link-btn session-badge-link" data-session-id="' + entry.sessionId + '">📋 Issue d\'une fiche d\'entretien</button>';
       }
       html += '</div>';
       html += '<div class="history-meta">';
@@ -2414,6 +2689,9 @@ function renderContent(){
   var maintenanceSheetBtn = document.getElementById('maintenanceSheetBtn');
   if(maintenanceSheetBtn) maintenanceSheetBtn.onclick = function(){ openMaintenanceSheetModal(activeVehicleId); };
 
+  var openSessionsBtn = document.getElementById('openSessionsBtn');
+  if(openSessionsBtn) openSessionsBtn.onclick = function(){ openSessionsListModal(activeVehicleId); };
+
   var addDocBtn = document.getElementById('addDocBtn');
   var docFileInput = document.getElementById('docFileInput');
   if(addDocBtn && docFileInput){
@@ -2487,6 +2765,13 @@ function renderContent(){
     row.onclick = function(){
       var entryId = row.getAttribute('data-entry-id');
       openEntryModal(entryId);
+    };
+  });
+
+  Array.prototype.forEach.call(content.querySelectorAll('.session-badge-link'), function(btn){
+    btn.onclick = function(e){
+      e.stopPropagation();
+      openSessionDetailModal(activeVehicleId, btn.getAttribute('data-session-id'));
     };
   });
 }
@@ -3468,6 +3753,7 @@ async function deleteVehicle(id){
   state.order = state.order.filter(function(x){ return x !== id; });
   delete state.vehicles[id];
   delete state.entries[id];
+  delete state.sessions[id];
   activeVehicleId = DASHBOARD_ID;
 
   await persist();
