@@ -433,6 +433,7 @@ var cloudReady = false;
 var currentUser = null;
 var realtimeChannel = null;
 var isWriting = false; // true pendant/juste après une écriture locale, pour ignorer l'écho realtime correspondant
+var lastKnownUpdatedAt = null; // updated_at de la dernière version connue côté serveur (jeton de concurrence optimiste)
 
 var state = {
   vehicles: {},
@@ -1829,17 +1830,37 @@ async function persist(){
   isWriting = true;
   try {
     var nowIso = new Date().toISOString();
-    var payload = {
-      user_id: currentUser.id,
-      state: state,
-      updated_at: nowIso
-    };
-    var res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' });
+    var payload = { user_id: currentUser.id, state: state, updated_at: nowIso };
+    var res;
+
+    if(lastKnownUpdatedAt === null){
+      // Pas encore de version serveur connue (première sauvegarde de la session) :
+      // upsert normal. Un conflit avec une écriture concurrente à cet instant précis
+      // reste possible ici, mais c'est une fenêtre bien plus étroite que l'ancien
+      // comportement (upsert systématique à chaque sauvegarde).
+      res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' }).select('updated_at').single();
+    } else {
+      // Écriture conditionnelle : on n'écrase que si la ligne serveur a toujours le
+      // updated_at qu'on avait chargé/vu en dernier. Sinon, quelqu'un d'autre a
+      // sauvegardé entre-temps (autre appareil) et on ne doit pas écraser son travail.
+      res = await sb.from('user_data').update({ state: state, updated_at: nowIso })
+        .eq('user_id', currentUser.id).eq('updated_at', lastKnownUpdatedAt)
+        .select('updated_at').single();
+    }
+
     if(res.error){
+      // PGRST116 = aucune ligne ne correspondait au filtre .eq('updated_at', ...) :
+      // c'est un conflit de version, pas une erreur réseau.
+      if(res.error.code === 'PGRST116'){
+        await handleSyncConflict();
+        return false;
+      }
       console.error('Erreur sauvegarde cloud:', res.error);
       setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
       return false;
     }
+
+    lastKnownUpdatedAt = res.data.updated_at;
     setSyncStatus('synced');
     return true;
   } catch(e) {
@@ -1854,6 +1875,26 @@ async function persist(){
   }
 }
 
+// Un autre appareil a sauvegardé entre-temps : on ne perd rien silencieusement.
+// On recharge la version la plus récente du serveur et on prévient clairement,
+// pour que l'utilisateur puisse refaire sa dernière action si elle n'a pas été prise
+// en compte.
+async function handleSyncConflict(){
+  console.error('Conflit de synchronisation détecté : une version plus récente existe côté serveur.');
+  try {
+    var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
+    if(res.data){
+      state = res.data.state;
+      lastKnownUpdatedAt = res.data.updated_at;
+      renderContent();
+    }
+  } catch(e){
+    console.error('Erreur rechargement après conflit:', e);
+  }
+  setSyncStatus('error', 'Modifié ailleurs — dernière version rechargée');
+  await showAlert('Ce carnet a été modifié depuis un autre appareil au même moment. La dernière version a été rechargée automatiquement — si votre dernière action n\'apparaît pas, merci de la refaire.');
+}
+
 async function loadState(){
   if(!cloudReady || !currentUser){
     console.error('loadState() appelé sans session cloud active.');
@@ -1865,8 +1906,10 @@ async function loadState(){
     var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
     if(res.data && res.data.state){
       state = res.data.state;
+      lastKnownUpdatedAt = res.data.updated_at;
     } else {
       initDefaultState();
+      lastKnownUpdatedAt = null;
       await persist();
     }
     subscribeRealtime();
@@ -1950,6 +1993,7 @@ function subscribeRealtime(){
       if(isWriting) return;
 
       state = row.state;
+      lastKnownUpdatedAt = row.updated_at;
       renderContent();
     })
     .subscribe();
@@ -1966,6 +2010,7 @@ async function signOutCloud(){
   unsubscribeRealtime();
   if(sb) await sb.auth.signOut();
   currentUser = null;
+  lastKnownUpdatedAt = null;
   var authEl = document.getElementById('authOverlay');
   if(authEl) authEl.style.display = 'flex';
 }
