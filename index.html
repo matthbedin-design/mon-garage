@@ -349,6 +349,7 @@
       <p>Suivi d'entretien véhicule</p>
     </div>
     <button class="icon-btn account-btn" id="journalBtn" title="Journal d'activités" aria-label="Journal d'activités">📋</button>
+    <button class="icon-btn account-btn" id="backupsBtn" title="Sauvegardes" aria-label="Sauvegardes">🕓</button>
     <div class="sync-status" id="syncStatus" style="display:none;"><span class="dot"></span><span id="syncStatusLabel">Synchronisé</span></div>
     <button class="icon-btn account-btn" id="accountBtn" title="Compte"><span class="sync-dot"></span>Compte</button>
   </header>
@@ -3850,7 +3851,100 @@ function openJournalModal(){
   document.getElementById('cancelBtn').onclick = closeModal;
 }
 
-// ---- Événements globaux & Démarrage ----
+// ---- Sauvegardes / historique (restauration de versions antérieures) ----
+async function openBackupsModal(){
+  var modal = document.getElementById('modal');
+  modal.innerHTML =
+    '<h3>Sauvegardes <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="empty-state" id="backupsLoading">Chargement des versions précédentes...</div>' +
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  if(!cloudReady || !currentUser){
+    document.getElementById('backupsLoading').textContent = 'Non connecté.';
+    return;
+  }
+
+  try {
+    var res = await sb.from('user_data_history')
+      .select('id, updated_at, archived_at')
+      .eq('user_id', currentUser.id)
+      .order('archived_at', { ascending: false })
+      .limit(30);
+
+    if(res.error){
+      console.error('Erreur chargement des sauvegardes:', res.error);
+      document.getElementById('backupsLoading').textContent = 'Impossible de charger les sauvegardes.';
+      return;
+    }
+
+    var rows = res.data || [];
+    var loadingEl = document.getElementById('backupsLoading');
+    if(!loadingEl) return; // la modale a été fermée entre-temps
+
+    if(!rows.length){
+      loadingEl.textContent = 'Aucune sauvegarde antérieure pour le moment. Une version est archivée automatiquement à chaque modification.';
+      return;
+    }
+
+    var list = document.createElement('div');
+    rows.forEach(function(row){
+      var item = document.createElement('div');
+      item.className = 'journal-row';
+      item.innerHTML =
+        '<div class="journal-meta"><span class="journal-time">' + fmtDateTime(row.archived_at) + '</span></div>' +
+        '<div class="journal-msg">Version datée du ' + fmtDateTime(row.updated_at) + '</div>';
+      var restoreBtn = document.createElement('button');
+      restoreBtn.className = 'btn btn-ghost';
+      restoreBtn.style.marginTop = '6px';
+      restoreBtn.textContent = 'Restaurer cette version';
+      restoreBtn.onclick = function(){ restoreBackup(row.id); };
+      item.appendChild(restoreBtn);
+      list.appendChild(item);
+    });
+
+    loadingEl.replaceWith(list);
+  } catch(e){
+    console.error('Exception chargement des sauvegardes:', e);
+    var el = document.getElementById('backupsLoading');
+    if(el) el.textContent = 'Impossible de charger les sauvegardes.';
+  }
+}
+
+async function restoreBackup(historyId){
+  var ok = await showConfirm(
+    'Restaurer cette version remplacera l\'état actuel du carnet (véhicules, historique, documents liés). Cette action peut être annulée en restaurant une version plus récente ensuite. Continuer ?',
+    'Restaurer'
+  );
+  if(!ok) return;
+
+  try {
+    var res = await sb.from('user_data_history').select('state').eq('id', historyId).eq('user_id', currentUser.id).single();
+    if(res.error || !res.data){
+      console.error('Erreur lecture de la sauvegarde:', res.error);
+      await showAlert('Impossible de récupérer cette sauvegarde.');
+      return;
+    }
+
+    state = res.data.state;
+    var saved = await persist();
+    if(saved){
+      closeModal();
+      renderContent();
+      await showAlert('Version restaurée avec succès.');
+    } else {
+      await showAlert('La restauration a échoué pendant la sauvegarde. Réessayez.');
+    }
+  } catch(e){
+    console.error('Exception restauration de sauvegarde:', e);
+    await showAlert('Impossible de restaurer cette version.');
+  }
+}
+
+
 var emailBtn = document.getElementById('emailLoginBtn');
 if(emailBtn) emailBtn.addEventListener('click', signInEmail);
 
@@ -3871,6 +3965,9 @@ if(addBtn) addBtn.addEventListener('click', function(){ openEntryModal(null); })
 
 var journalBtn = document.getElementById('journalBtn');
 if(journalBtn) journalBtn.addEventListener('click', openJournalModal);
+
+var backupsBtn = document.getElementById('backupsBtn');
+if(backupsBtn) backupsBtn.addEventListener('click', openBackupsModal);
 
 var scrollTopBtn = document.getElementById('scrollTopBtn');
 if(scrollTopBtn){
