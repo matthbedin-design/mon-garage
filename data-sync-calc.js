@@ -163,8 +163,19 @@ async function loadState(){
   if(!state.order) state.order = [];
   if(!state.vehicles) state.vehicles = {};
   if(!state.entries) state.entries = {};
-  if(!state.checklistItems || !state.checklistItems.length) state.checklistItems = DEFAULT_CHECKLIST_ITEMS.slice();
+  if(!state.checklistItems || !state.checklistItems.length){
+    state.checklistItems = DEFAULT_CHECKLIST_ITEMS.slice();
+  } else {
+    // Fusionne les nouveaux points de vérification par défaut ajoutés depuis la
+    // dernière visite, sans écraser ni supprimer ceux déjà personnalisés.
+    var existingChecklistIds = {};
+    state.checklistItems.forEach(function(c){ existingChecklistIds[c.id] = true; });
+    DEFAULT_CHECKLIST_ITEMS.forEach(function(c){
+      if(!existingChecklistIds[c.id]) state.checklistItems.push(c);
+    });
+  }
   if(!state.sessions) state.sessions = {};
+  if(!state.plannedInterventions) state.plannedInterventions = {};
 
   if(!activeVehicleId){
     activeVehicleId = DASHBOARD_ID;
@@ -181,7 +192,8 @@ function initDefaultState(){
     entries: {},
     order: [],
     types: DEFAULT_TYPES.slice(),
-    journal: []
+    journal: [],
+    plannedInterventions: {}
   };
 }
 

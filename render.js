@@ -97,6 +97,32 @@ function renderDashboardContent(content){
   }
   html += '</section>';
 
+  // Interventions à prévoir, tous véhicules confondus — visibilité immédiate à l'accueil
+  var allPlanned = [];
+  vehicleIds.forEach(function(id){
+    getPlannedInterventions(id).forEach(function(p){
+      allPlanned.push({ vehicleId: id, vehicleName: state.vehicles[id].name, item: p });
+    });
+  });
+  if(allPlanned.length){
+    allPlanned.sort(function(a,b){ return a.item.createdAt < b.item.createdAt ? 1 : -1; });
+    html += '<section>';
+    html += '<h2 class="section-title">Interventions à prévoir (' + allPlanned.length + ')</h2>';
+    allPlanned.forEach(function(entry){
+      html += '<div class="planned-item" data-planned-id="' + entry.item.id + '" data-planned-vehicle-id="' + entry.vehicleId + '">';
+      html += '<div class="planned-item-main">';
+      html += '<div class="planned-item-label">' + escapeHtml(entry.item.label) + '</div>';
+      html += '<div class="planned-item-veh">' + escapeHtml(entry.vehicleName) + '</div>';
+      if(entry.item.notes) html += '<div class="planned-item-notes">' + escapeHtml(entry.item.notes) + '</div>';
+      html += '</div>';
+      html += '<div class="planned-item-actions">';
+      html += '<button type="button" class="export-btn dash-planned-convert-btn" data-planned-id="' + entry.item.id + '" data-planned-vehicle-id="' + entry.vehicleId + '">✅ Créer l\'intervention</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</section>';
+  }
+
   html += '<section><div class="dash-grid">';
   summaries.forEach(function(s){
     var badgeColor = s.worst === 'overdue' ? 'var(--red)' : (s.worst === 'warning' ? 'var(--yellow)' : 'var(--green)');
@@ -150,6 +176,13 @@ function renderDashboardContent(content){
     card.onclick = function(){
       activeVehicleId = card.getAttribute('data-vehicle-id');
       render();
+    };
+  });
+
+  Array.prototype.forEach.call(content.querySelectorAll('.dash-planned-convert-btn'), function(btn){
+    btn.onclick = function(e){
+      e.stopPropagation();
+      startConvertPlannedIntervention(btn.getAttribute('data-planned-vehicle-id'), btn.getAttribute('data-planned-id'));
     };
   });
 }
@@ -319,6 +352,30 @@ function renderContent(){
     });
   }
   html += '</div>'; // fin #gaugesBody
+  html += '</section>';
+
+  // Section 1ter : Interventions à prévoir (besoins identifiés — checklist ou saisie
+  // manuelle — en attente de planification avant d'être converties en intervention réelle)
+  var plannedList = getPlannedInterventions(activeVehicleId);
+  html += '<section>';
+  html += '<h2 class="section-title"><span>Interventions à prévoir' + (plannedList.length ? ' (' + plannedList.length + ')' : '') + '</span>';
+  html += '<span class="export-actions"><button class="export-btn" id="addPlannedBtn" title="Ajouter une intervention à prévoir">+ Ajouter</button></span></h2>';
+  if(!plannedList.length){
+    html += '<div class="gauge-empty">Aucune intervention à prévoir pour ce véhicule.</div>';
+  } else {
+    plannedList.slice().sort(function(a,b){ return a.createdAt < b.createdAt ? 1 : -1; }).forEach(function(p){
+      html += '<div class="planned-item" data-planned-id="' + p.id + '">';
+      html += '<div class="planned-item-main">';
+      html += '<div class="planned-item-label">' + escapeHtml(p.label) + '</div>';
+      if(p.notes) html += '<div class="planned-item-notes">' + escapeHtml(p.notes) + '</div>';
+      html += '</div>';
+      html += '<div class="planned-item-actions">';
+      html += '<button type="button" class="export-btn planned-convert-btn" data-planned-id="' + p.id + '">✅ Créer l\'intervention</button>';
+      html += '<button type="button" class="trash-btn planned-remove-btn" data-planned-id="' + p.id + '" title="Retirer" aria-label="Retirer cette intervention à prévoir">' + trashSvg() + '</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
   html += '</section>';
 
   // Section 1bis : Coûts d'entretien (déduplication des factures partagées par batchId)
@@ -603,6 +660,22 @@ function renderContent(){
 
   var openSessionsBtn = document.getElementById('openSessionsBtn');
   if(openSessionsBtn) openSessionsBtn.onclick = function(){ openSessionsListModal(activeVehicleId); };
+
+  var addPlannedBtn = document.getElementById('addPlannedBtn');
+  if(addPlannedBtn) addPlannedBtn.onclick = function(){ openAddPlannedInterventionModal(activeVehicleId); };
+
+  Array.prototype.forEach.call(content.querySelectorAll('.planned-convert-btn'), function(btn){
+    btn.onclick = function(){ startConvertPlannedIntervention(activeVehicleId, btn.getAttribute('data-planned-id')); };
+  });
+
+  Array.prototype.forEach.call(content.querySelectorAll('.planned-remove-btn'), function(btn){
+    btn.onclick = async function(){
+      var ok = await showConfirm('Retirer cette intervention à prévoir ? Elle ne sera pas historisée.', 'Retirer');
+      if(!ok) return;
+      await removePlannedIntervention(activeVehicleId, btn.getAttribute('data-planned-id'));
+      renderContent();
+    };
+  });
 
   var addDocBtn = document.getElementById('addDocBtn');
   var docFileInput = document.getElementById('docFileInput');

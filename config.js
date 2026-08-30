@@ -30,18 +30,40 @@ var HISTORY_CATEGORIES = [
 ];
 
 var DEFAULT_CHECKLIST_ITEMS = [
-  { id: 'chk_essuie_glaces', label: 'État et fonctionnement des balais d\'essuie-glace', theme: 'Visibilité' },
-  { id: 'chk_feux', label: 'Fonctionnement des feux (avant, arrière, stop, clignotants)', theme: 'Visibilité' },
+  // Freinage
   { id: 'chk_plaquettes_av', label: 'État des plaquettes AV', theme: 'Freinage' },
   { id: 'chk_plaquettes_ar', label: 'État des plaquettes AR', theme: 'Freinage' },
   { id: 'chk_disques', label: 'État des disques de frein', theme: 'Freinage' },
-  { id: 'chk_liquide_refroidissement', label: 'Liquide de refroidissement (niveau, couleur, pH)', theme: 'Niveaux et étanchéité' },
-  { id: 'chk_liquide_frein', label: 'Liquide de frein (niveau)', theme: 'Niveaux et étanchéité' },
-  { id: 'chk_lave_glace', label: 'Lave-glace (niveau)', theme: 'Niveaux et étanchéité' },
-  { id: 'chk_huile', label: 'Niveau d\'huile moteur', theme: 'Niveaux et étanchéité' },
-  { id: 'chk_pneus', label: 'Pression et état des pneus (usure, hernies)', theme: 'Pneumatiques' },
-  { id: 'chk_batterie', label: 'État de la batterie et des bornes', theme: 'Électrique' },
-  { id: 'chk_courroies', label: 'État visuel des courroies', theme: 'Moteur' }
+  { id: 'chk_frein_pedale', label: 'Efficacité de la pédale de frein (course, fermeté)', theme: 'Freinage' },
+  { id: 'chk_frein_main', label: 'Efficacité du frein à main / stationnement', theme: 'Freinage' },
+  // Pneumatiques et roues
+  { id: 'chk_pneus', label: 'Pression et état des pneus (usure, hernies)', theme: 'Pneumatiques et roues' },
+  { id: 'chk_pneus_bouchons', label: 'Présence des bouchons de valve', theme: 'Pneumatiques et roues' },
+  { id: 'chk_roue_secours', label: 'État et pression de la roue de secours / kit anti-crevaison', theme: 'Pneumatiques et roues' },
+  // Niveaux et fluides
+  { id: 'chk_huile', label: 'Niveau d\'huile moteur', theme: 'Niveaux et fluides' },
+  { id: 'chk_liquide_frein', label: 'Liquide de frein (niveau)', theme: 'Niveaux et fluides' },
+  { id: 'chk_liquide_refroidissement', label: 'Liquide de refroidissement (niveau, couleur)', theme: 'Niveaux et fluides' },
+  { id: 'chk_lave_glace', label: 'Lave-glace (niveau)', theme: 'Niveaux et fluides' },
+  { id: 'chk_direction_liquide', label: 'Niveau de liquide de direction assistée (si accessible)', theme: 'Niveaux et fluides' },
+  // Amortisseurs / Suspension
+  { id: 'chk_amort_fuite', label: 'Absence de fuite visible sur les amortisseurs', theme: 'Amortisseurs / Suspension' },
+  { id: 'chk_amort_comportement', label: 'Comportement anormal (nez qui plonge, rebonds excessifs)', theme: 'Amortisseurs / Suspension' },
+  // Moteur
+  { id: 'chk_courroies', label: 'État visuel des courroies', theme: 'Moteur' },
+  { id: 'chk_moteur_bruits', label: 'Bruits anormaux au ralenti', theme: 'Moteur' },
+  // Circuit de charge / Batterie
+  { id: 'chk_batterie', label: 'État de la batterie et des bornes', theme: 'Circuit de charge / Batterie' },
+  { id: 'chk_batterie_fixation', label: 'Fixation de la batterie', theme: 'Circuit de charge / Batterie' },
+  // Visibilité / Éclairage
+  { id: 'chk_essuie_glaces', label: 'État et fonctionnement des balais d\'essuie-glace', theme: 'Visibilité / Éclairage' },
+  { id: 'chk_feux', label: 'Fonctionnement des feux (avant, arrière, stop, clignotants)', theme: 'Visibilité / Éclairage' },
+  { id: 'chk_optiques', label: 'État des optiques (pas de fissure, pas d\'eau à l\'intérieur)', theme: 'Visibilité / Éclairage' },
+  { id: 'chk_retroviseurs', label: 'État des rétroviseurs et glaces extérieures', theme: 'Visibilité / Éclairage' },
+  // Intérieur / Sécurité
+  { id: 'chk_klaxon', label: 'Fonctionnement de l\'avertisseur sonore (klaxon)', theme: 'Intérieur / Sécurité' },
+  { id: 'chk_voyants', label: 'Voyants du tableau de bord au démarrage (rien d\'anormal allumé)', theme: 'Intérieur / Sécurité' },
+  { id: 'chk_plaques', label: 'État et lisibilité des plaques d\'immatriculation', theme: 'Intérieur / Sécurité' }
 ];
 
 var sb = null;
@@ -50,13 +72,15 @@ var currentUser = null;
 var realtimeChannel = null;
 var isWriting = false; // true pendant/juste après une écriture locale, pour ignorer l'écho realtime correspondant
 var lastKnownUpdatedAt = null; // updated_at de la dernière version connue côté serveur (jeton de concurrence optimiste)
+var convertingPlannedIntervention = null; // { vehicleId, id } de l'intervention à prévoir en cours de conversion vers une intervention réalisée (le temps que le formulaire soit enregistré ou annulé)
 
 var state = {
   vehicles: {},
   entries: {},
   order: [],
   types: DEFAULT_TYPES.slice(),
-  journal: []
+  journal: [],
+  plannedInterventions: {}
 };
 
 var activeVehicleId = null;

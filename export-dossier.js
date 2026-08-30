@@ -417,7 +417,7 @@ function openMaintenanceSheetModal(vehicleId){
       status: 'planned',
       plannedTypeIds: selectedTypeIds,
       checklistItemIds: selectedChecklistIds,
-      checklistResults: selectedChecklistIds.map(function(id){ return { itemId: id, checked: false, anomaly: null }; }),
+      checklistResults: selectedChecklistIds.map(function(id){ return { itemId: id, status: null, anomaly: null, plannedInterventionId: null }; }),
       entryIds: [],
       sessionNotes: '',
       createdAt: new Date().toISOString()

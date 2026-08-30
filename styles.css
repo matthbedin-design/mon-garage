@@ -304,3 +304,22 @@
     .dossier-cover{ border-bottom-color:#c9971f !important; }
     .msheet-item{ background:#fdfaf0 !important; border-color:#ddd !important; border-left-color:#c9971f !important; }
   }
+
+  /* ---- Checklist : statut OK / À revoir (2 états) ---- */
+  .session-check-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .session-check-label{ font-size:13.5px; }
+  .chk-status-toggle{ display:flex; gap:6px; flex:none; }
+  .chk-status-pill{ display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:20px; cursor:pointer; color:var(--text-muted); }
+  .chk-status-pill input{ display:none; }
+  .chk-status-ok:has(input:checked){ border-color:var(--green); color:var(--green); background:rgba(95,174,125,.12); }
+  .chk-status-revoir:has(input:checked){ border-color:var(--red); color:var(--red); background:rgba(217,83,79,.12); }
+  .chk-revoir-summary{ font-size:12.5px; color:var(--red); margin-bottom:10px; }
+  .chk-ok-summary{ font-size:12.5px; color:var(--green); margin-bottom:10px; }
+
+  /* ---- Interventions à prévoir ---- */
+  .planned-item{ background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow); border-radius:8px; padding:12px 14px; margin-bottom:10px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .planned-item-main{ flex:1; min-width:0; }
+  .planned-item-label{ font-family:'Oswald',sans-serif; font-size:14.5px; font-weight:600; }
+  .planned-item-notes{ font-size:12.5px; color:var(--text-muted); margin-top:3px; }
+  .planned-item-veh{ font-size:11.5px; color:var(--yellow); margin-top:3px; }
+  .planned-item-actions{ display:flex; flex-direction:column; gap:6px; align-items:flex-end; flex:none; }

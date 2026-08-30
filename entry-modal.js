@@ -451,6 +451,15 @@ async function saveEntry(){
 
   if(v && km != null && km > v.mileage) v.mileage = km;
 
+  // Si cette intervention provient d'une "intervention à prévoir" en cours de
+  // conversion, on la retire de la liste d'attente au moment où l'enregistrement
+  // réussit réellement — pas à l'ouverture du formulaire, pour ne rien perdre en
+  // cas d'annulation.
+  if(!editingEntryId && convertingPlannedIntervention && convertingPlannedIntervention.vehicleId === activeVehicleId){
+    var plannedList = state.plannedInterventions[activeVehicleId] || [];
+    state.plannedInterventions[activeVehicleId] = plannedList.filter(function(p){ return p.id !== convertingPlannedIntervention.id; });
+  }
+
   pendingInvoiceFile = null;
   removeInvoiceRequested = false;
 
@@ -491,5 +500,6 @@ function closeModal(){
   var overlay = document.getElementById('modalOverlay');
   if(overlay) overlay.classList.remove('open');
   editingEntryId = null;
+  convertingPlannedIntervention = null;
 }
 
