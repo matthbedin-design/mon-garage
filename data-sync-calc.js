@@ -89,7 +89,10 @@ function snapshotCurrent(){
 function vehicleRow(id, v, sortOrder){
   return {
     id: id,
-    owner_id: currentUser.id,
+    // Le propriétaire réel est conservé (chargé depuis la base via v.ownerId) ;
+    // ne retombe sur l'utilisateur courant que pour un véhicule tout juste créé
+    // localement (pas encore de ownerId connu).
+    owner_id: v.ownerId || currentUser.id,
     name: v.name, plate: v.plate || '', color: v.color || '',
     mileage: v.mileage || 0, vehicle_type: v.vehicleType || 'motorized',
     enabled_types: v.enabledTypes || [], intervals: v.intervals || {},
@@ -118,12 +121,15 @@ function entryRow(id, vehicleId, e){
     created_at: e.createdAt || new Date().toISOString(),
     updated_at: e.updatedAt || null,
     session_id: e.sessionId || null,
-    created_by: currentUser.id
+    // Conserve le créateur d'origine (utile pour la notification au
+    // propriétaire à l'étape 2b) ; ne retombe sur l'utilisateur courant que
+    // pour une entrée tout juste créée localement.
+    created_by: e.createdBy || currentUser.id
   };
 }
 
 function sessionRow(id, vehicleId, s){
-  return { id: id, vehicle_id: vehicleId, data: s, status: s.status || null, created_by: currentUser.id };
+  return { id: id, vehicle_id: vehicleId, data: s, status: s.status || null, created_by: s.createdBy || currentUser.id };
 }
 
 function plannedRow(id, vehicleId, p){
@@ -132,7 +138,7 @@ function plannedRow(id, vehicleId, p){
     created_at: p.createdAt || new Date().toISOString(),
     source_session_id: p.sourceSessionId || null,
     source_item_id: p.sourceItemId || null,
-    created_by: currentUser.id
+    created_by: p.createdBy || currentUser.id
   };
 }
 
@@ -326,6 +332,51 @@ async function persist(){
   }
 }
 
+// ============================================================================
+// ÉTAPE 2 — PARTAGE PAR VÉHICULE
+// ============================================================================
+// Rôle de l'utilisateur courant sur chaque véhicule non-possédé (chargé dans
+// loadState depuis vehicle_shares). Les véhicules possédés n'ont pas besoin
+// d'entrée ici : isOwner() suffit.
+var myVehicleRoles = {};
+
+function isOwner(vehicleId){
+  var v = state.vehicles[vehicleId];
+  return !!(v && v.ownerId === currentUser.id);
+}
+
+function getVehicleRole(vehicleId){
+  if(isOwner(vehicleId)) return 'owner';
+  return myVehicleRoles[vehicleId] || null; // null = pas d'accès (ne devrait pas arriver si RLS a livré le véhicule)
+}
+
+// Éditeur ou propriétaire : peut modifier les réglages du véhicule, ajouter/
+// modifier des interventions, gérer les fiches de vérification.
+function canEditVehicle(vehicleId){
+  var r = getVehicleRole(vehicleId);
+  return r === 'owner' || r === 'editor';
+}
+
+// Récupère les invitations de partage en attente correspondant à l'email du
+// compte connecté et les active. Autorisé par la policy RLS "shares_self_claim"
+// (l'utilisateur ne peut s'attribuer que les partages dont l'email vérifié par
+// Supabase correspond au sien).
+async function claimPendingShares(){
+  if(!currentUser || !currentUser.email) return;
+  try {
+    var pending = await sb.from('vehicle_shares').select('id')
+      .eq('status', 'pending').ilike('invited_email', currentUser.email);
+    if(pending.error || !pending.data || !pending.data.length) return;
+    for(var i = 0; i < pending.data.length; i++){
+      await sb.from('vehicle_shares')
+        .update({ shared_with_user_id: currentUser.id, status: 'active' })
+        .eq('id', pending.data[i].id);
+    }
+  } catch(e){
+    console.error('Erreur lors de la réclamation des invitations en attente:', e);
+  }
+}
+
 async function loadState(){
   if(!cloudReady || !currentUser){
     console.error('loadState() appelé sans session cloud active.');
@@ -334,21 +385,33 @@ async function loadState(){
   }
 
   try {
+    // Récupère les invitations de partage en attente correspondant à l'email
+    // du compte qui vient de se connecter, et les active — pour que les
+    // véhicules partagés apparaissent dès ce chargement.
+    await claimPendingShares();
+
     var results = await Promise.all([
       sb.from('vehicles').select('*').order('sort_order', { ascending: true }),
       sb.from('entries').select('*'),
       sb.from('sessions').select('*'),
       sb.from('planned_interventions').select('*'),
-      sb.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle()
+      sb.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle(),
+      sb.from('vehicle_shares').select('vehicle_id, role').eq('shared_with_user_id', currentUser.id).eq('status', 'active')
     ]);
-    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4];
+    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4], sharesRes = results[5];
 
     var firstErr = results.map(function(r){ return r.error; }).filter(Boolean)[0];
     if(firstErr) throw firstErr;
 
+    myVehicleRoles = {};
+    (sharesRes.data || []).forEach(function(row){
+      myVehicleRoles[row.vehicle_id] = row.role;
+    });
+
     var vehicles = {}, order = [];
     (vehRes.data || []).forEach(function(row){
       vehicles[row.id] = {
+        ownerId: row.owner_id,
         name: row.name, plate: row.plate, color: row.color, mileage: row.mileage,
         vehicleType: row.vehicle_type, enabledTypes: row.enabled_types || [],
         intervals: row.intervals || {}, documents: row.documents || [],
@@ -368,7 +431,7 @@ async function loadState(){
         invoiceDoc: row.invoice_doc, batchId: row.batch_id, ct: row.ct,
         documents: row.documents || [],
         createdAt: row.created_at, updatedAt: row.updated_at,
-        sessionId: row.session_id
+        sessionId: row.session_id, createdBy: row.created_by
       };
       if(!e.ct) delete e.ct;
       if(!e.invoiceDoc) delete e.invoiceDoc;
@@ -378,7 +441,7 @@ async function loadState(){
     var sessions = {};
     (sesRes.data || []).forEach(function(row){
       if(!sessions[row.vehicle_id]) sessions[row.vehicle_id] = [];
-      var s = Object.assign({}, row.data, { id: row.id });
+      var s = Object.assign({}, row.data, { id: row.id, createdBy: row.created_by });
       sessions[row.vehicle_id].push(s);
     });
 
@@ -389,7 +452,8 @@ async function loadState(){
         id: row.id, label: row.label, notes: row.notes,
         createdAt: row.created_at,
         sourceSessionId: row.source_session_id,
-        sourceItemId: row.source_item_id
+        sourceItemId: row.source_item_id,
+        createdBy: row.created_by
       });
     });
 

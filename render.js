@@ -3,7 +3,8 @@ function render(){
   renderTabs();
   renderContent();
   var fab = document.querySelector('.fab');
-  if(fab) fab.style.display = (activeVehicleId === DASHBOARD_ID) ? 'none' : 'flex';
+  var showFab = (activeVehicleId !== DASHBOARD_ID) && canEditVehicle(activeVehicleId);
+  if(fab) fab.style.display = showFab ? 'flex' : 'none';
 }
 
 function renderTabs(){

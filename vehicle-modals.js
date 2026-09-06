@@ -66,6 +66,8 @@ function collectSettingsFormData(v, modal, swatchWrap){
 function openSettingsModal(){
   var v = state.vehicles[activeVehicleId];
   var modal = document.getElementById('modal');
+  var iAmOwner = isOwner(activeVehicleId);
+  var iCanEdit = canEditVehicle(activeVehicleId);
 
   var enabledTypeIds = v.enabledTypes || [];
   var rows = state.types
@@ -135,10 +137,12 @@ function openSettingsModal(){
       '<button type="button" class="export-btn" id="openTypesManagerBtn" style="margin-top:10px;">🏷️ Gérer les types pour plusieurs véhicules</button>' +
     '</div>' +
     '<div class="modal-actions" style="margin-top:16px;">' +
-      (canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce véhicule</button>' : '') +
+      (iAmOwner ? '<button class="btn btn-ghost" id="shareVehicleBtn">🔗 Partager</button>' : '') +
+      (iAmOwner && canDelete ? '<button class="btn btn-danger" id="deleteVehicleBtn">Supprimer ce véhicule</button>' : '') +
       '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
-      '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' +
+      (iCanEdit ? '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' : '') +
     '</div>' +
+    (iCanEdit ? '' : '<div class="field-hint" style="text-align:center;margin-top:8px;">👁️ Accès en lecture seule sur ce véhicule — vous ne pouvez pas modifier ces réglages.</div>') +
     '<div id="settingsSaveStatus" style="text-align:center; font-size:12.5px; color:var(--green); margin-top:8px; min-height:16px;"></div>';
 
   var swatchWrap = document.getElementById('s-swatches');
@@ -158,7 +162,21 @@ function openSettingsModal(){
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
 
-  if(canDelete){
+  if(iAmOwner){
+    document.getElementById('shareVehicleBtn').onclick = function(){ openShareVehicleModal(activeVehicleId); };
+  }
+
+  if(!iCanEdit){
+    // Lecture seule : tous les champs du formulaire sont désactivés, aucun
+    // handler de modification n'est attaché (la sécurité réelle vient des
+    // policies RLS côté serveur — ceci n'est qu'un confort d'interface).
+    Array.prototype.forEach.call(modal.querySelectorAll('input, select, button.trash-btn'), function(el){
+      el.disabled = true;
+    });
+    return;
+  }
+
+  if(iAmOwner && canDelete){
     document.getElementById('deleteVehicleBtn').onclick = function(){ deleteVehicle(activeVehicleId); };
   }
 
@@ -217,6 +235,117 @@ function openSettingsModal(){
       statusEl.textContent = ok ? '✓ Enregistré' : '❌ Échec de l\'enregistrement, réessayez.';
       clearTimeout(statusEl._clearTimer);
       statusEl._clearTimer = setTimeout(function(){ if(statusEl) statusEl.textContent = ''; }, 3000);
+    }
+  };
+}
+
+// ---- Modale : partage d'un véhicule (étape 2a — rôles visiteur / éditeur) ----
+function openShareVehicleModal(vehicleId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var modal = document.getElementById('modal');
+
+  modal.innerHTML =
+    '<h3>Partager "' + escapeHtml(v.name) + '" <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:12px;">Les personnes ci-dessous ont accès à ce véhicule. Elles ne voient aucun de vos autres véhicules.</div>' +
+    '<div id="shareListArea" class="empty-state">Chargement…</div>' +
+    '<hr class="hr">' +
+    '<div class="field"><label>Inviter par e-mail</label><input type="email" id="shareEmailInput" placeholder="email@exemple.com"></div>' +
+    '<div class="field"><label>Rôle</label><select id="shareRoleSelect">' +
+      '<option value="viewer">Lecture seule</option>' +
+      '<option value="editor">Édition complète</option>' +
+    '</select></div>' +
+    '<button class="btn btn-primary" id="shareInviteBtn" style="width:100%;">Inviter</button>' +
+    '<div id="shareInviteStatus" style="text-align:center; font-size:12.5px; margin-top:8px; min-height:16px;"></div>' +
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  async function refreshShareList(){
+    var area = document.getElementById('shareListArea');
+    if(!area) return;
+    var res = await sb.from('vehicle_shares').select('id, invited_email, role, status')
+      .eq('vehicle_id', vehicleId).eq('owner_id', currentUser.id);
+    if(res.error){
+      area.textContent = 'Impossible de charger la liste des partages.';
+      return;
+    }
+    var rows = res.data || [];
+    if(!rows.length){
+      area.className = 'empty-state';
+      area.textContent = 'Personne d\'autre n\'a accès à ce véhicule pour le moment.';
+      return;
+    }
+    area.className = '';
+    area.innerHTML = rows.map(function(r){
+      var roleLabel = (r.role === 'editor') ? 'Édition complète' : 'Lecture seule';
+      var statusLabel = (r.status === 'pending') ? ' (en attente de connexion)' : '';
+      return '<div class="journal-row">' +
+        '<div class="journal-meta"><span class="journal-tag" style="background:' + (v.color || '#6B6E70') + '">' + roleLabel + '</span></div>' +
+        '<div class="journal-msg">' + escapeHtml(r.invited_email || '') + statusLabel + '</div>' +
+        '<button class="btn btn-ghost" data-revoke="' + r.id + '" style="margin-top:6px;">Révoquer l\'accès</button>' +
+        '</div>';
+    }).join('');
+
+    Array.prototype.forEach.call(area.querySelectorAll('[data-revoke]'), function(btn){
+      btn.onclick = async function(){
+        var ok = await showConfirm('Révoquer l\'accès de cette personne à ce véhicule ?', 'Révoquer');
+        if(!ok) return;
+        await sb.from('vehicle_shares').delete().eq('id', btn.getAttribute('data-revoke')).eq('owner_id', currentUser.id);
+        refreshShareList();
+      };
+    });
+  }
+  refreshShareList();
+
+  document.getElementById('shareInviteBtn').onclick = async function(){
+    var email = document.getElementById('shareEmailInput').value.trim().toLowerCase();
+    var role = document.getElementById('shareRoleSelect').value;
+    var statusEl = document.getElementById('shareInviteStatus');
+    if(!email){ statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Merci de saisir un e-mail.'; return; }
+
+    statusEl.style.color = '';
+    statusEl.textContent = 'Vérification…';
+    try {
+      var session = await sb.auth.getSession();
+      var accessToken = session.data && session.data.session ? session.data.session.access_token : null;
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/resolve-user-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accessToken },
+        body: JSON.stringify({ email: email })
+      });
+      var result = await resp.json();
+      var foundUserId = result && result.userId ? result.userId : null;
+
+      var insertRow = {
+        vehicle_id: vehicleId,
+        owner_id: currentUser.id,
+        invited_email: email,
+        role: role,
+        shared_with_user_id: foundUserId,
+        status: foundUserId ? 'active' : 'pending'
+      };
+      var ins = await sb.from('vehicle_shares').insert(insertRow);
+      if(ins.error){
+        statusEl.style.color = 'var(--red)';
+        statusEl.textContent = 'Erreur : ' + ins.error.message;
+        return;
+      }
+
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = foundUserId
+        ? '✓ Accès accordé immédiatement (compte existant).'
+        : '✓ Invitation enregistrée — l\'accès s\'activera à sa prochaine connexion.';
+      document.getElementById('shareEmailInput').value = '';
+      logEvent(vehicleId, 'Véhicule partagé avec ' + email + ' (' + (role === 'editor' ? 'édition' : 'lecture seule') + ')');
+      await persist();
+      refreshShareList();
+    } catch(e){
+      console.error('Erreur invitation de partage:', e);
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Erreur réseau, réessayez.';
     }
   };
 }
@@ -456,6 +585,7 @@ function openAddVehicleModal(){
     var id = genId('v');
     var allIds = state.types.map(function(t){ return t.id; });
     var vehicle = makeVehicle(name, color, allIds);
+    vehicle.ownerId = currentUser.id;
     vehicle.vehicleType = vehicleType;
     vehicle.mileage = (vehicleType === 'trailer') ? null : (isNaN(km) ? 0 : km);
 
@@ -482,6 +612,7 @@ async function deleteVehicle(id){
   delete state.vehicles[id];
   delete state.entries[id];
   delete state.sessions[id];
+  delete state.plannedInterventions[id];
   activeVehicleId = DASHBOARD_ID;
 
   await persist();
