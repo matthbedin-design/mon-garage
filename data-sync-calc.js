@@ -357,6 +357,14 @@ function canEditVehicle(vehicleId){
   return r === 'owner' || r === 'editor';
 }
 
+// Propriétaire, éditeur ou contributeur : peut ajouter des interventions, des
+// fiches de vérification et des interventions à prévoir — mais pas modifier
+// les réglages du véhicule ni les interventions déjà enregistrées par d'autres.
+function canContribute(vehicleId){
+  var r = getVehicleRole(vehicleId);
+  return r === 'owner' || r === 'editor' || r === 'contributor';
+}
+
 // Récupère les invitations de partage en attente correspondant à l'email du
 // compte connecté et les active. Autorisé par la policy RLS "shares_self_claim"
 // (l'utilisateur ne peut s'attribuer que les partages dont l'email vérifié par

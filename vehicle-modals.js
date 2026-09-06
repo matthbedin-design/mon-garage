@@ -142,7 +142,7 @@ function openSettingsModal(){
       '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
       (iCanEdit ? '<button class="btn btn-primary" id="saveSettingsBtn">Enregistrer</button>' : '') +
     '</div>' +
-    (iCanEdit ? '' : '<div class="field-hint" style="text-align:center;margin-top:8px;">👁️ Accès en lecture seule sur ce véhicule — vous ne pouvez pas modifier ces réglages.</div>') +
+    (iCanEdit ? '' : '<div class="field-hint" style="text-align:center;margin-top:8px;">👁️ Vous ne pouvez pas modifier les réglages de ce véhicule' + (canContribute(activeVehicleId) ? ' (vous pouvez en revanche ajouter des interventions).' : '.') + '</div>') +
     '<div id="settingsSaveStatus" style="text-align:center; font-size:12.5px; color:var(--green); margin-top:8px; min-height:16px;"></div>';
 
   var swatchWrap = document.getElementById('s-swatches');
@@ -253,6 +253,7 @@ function openShareVehicleModal(vehicleId){
     '<div class="field"><label>Inviter par e-mail</label><input type="email" id="shareEmailInput" placeholder="email@exemple.com"></div>' +
     '<div class="field"><label>Rôle</label><select id="shareRoleSelect">' +
       '<option value="viewer">Lecture seule</option>' +
+      '<option value="contributor">Contributeur (peut ajouter des interventions)</option>' +
       '<option value="editor">Édition complète</option>' +
     '</select></div>' +
     '<button class="btn btn-primary" id="shareInviteBtn" style="width:100%;">Inviter</button>' +
@@ -280,7 +281,7 @@ function openShareVehicleModal(vehicleId){
     }
     area.className = '';
     area.innerHTML = rows.map(function(r){
-      var roleLabel = (r.role === 'editor') ? 'Édition complète' : 'Lecture seule';
+      var roleLabel = (r.role === 'editor') ? 'Édition complète' : (r.role === 'contributor' ? 'Contributeur' : 'Lecture seule');
       var statusLabel = (r.status === 'pending') ? ' (en attente de connexion)' : '';
       return '<div class="journal-row">' +
         '<div class="journal-meta"><span class="journal-tag" style="background:' + (v.color || '#6B6E70') + '">' + roleLabel + '</span></div>' +
@@ -339,7 +340,8 @@ function openShareVehicleModal(vehicleId){
         ? '✓ Accès accordé immédiatement (compte existant).'
         : '✓ Invitation enregistrée — l\'accès s\'activera à sa prochaine connexion.';
       document.getElementById('shareEmailInput').value = '';
-      logEvent(vehicleId, 'Véhicule partagé avec ' + email + ' (' + (role === 'editor' ? 'édition' : 'lecture seule') + ')');
+      var roleLogLabel = (role === 'editor') ? 'édition' : (role === 'contributor' ? 'contributeur' : 'lecture seule');
+      logEvent(vehicleId, 'Véhicule partagé avec ' + email + ' (' + roleLogLabel + ')');
       await persist();
       refreshShareList();
     } catch(e){

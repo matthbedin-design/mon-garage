@@ -3,7 +3,7 @@ function render(){
   renderTabs();
   renderContent();
   var fab = document.querySelector('.fab');
-  var showFab = (activeVehicleId !== DASHBOARD_ID) && canEditVehicle(activeVehicleId);
+  var showFab = (activeVehicleId !== DASHBOARD_ID) && canContribute(activeVehicleId);
   if(fab) fab.style.display = showFab ? 'flex' : 'none';
 }
 
@@ -361,7 +361,7 @@ function renderContent(){
   var plannedList = getPlannedInterventions(activeVehicleId);
   html += '<section>';
   html += '<h2 class="section-title"><span>Interventions à prévoir' + (plannedList.length ? ' (' + plannedList.length + ')' : '') + '</span>';
-  html += '<span class="export-actions"><button class="export-btn" id="addPlannedBtn" title="Ajouter une intervention à prévoir">+ Ajouter</button></span></h2>';
+  html += (canContribute(activeVehicleId) ? '<span class="export-actions"><button class="export-btn" id="addPlannedBtn" title="Ajouter une intervention à prévoir">+ Ajouter</button></span>' : '') + '</h2>';
   if(!plannedList.length){
     html += '<div class="gauge-empty">Aucune intervention à prévoir pour ce véhicule.</div>';
   } else {
