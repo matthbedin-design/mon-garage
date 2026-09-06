@@ -248,9 +248,10 @@ function renderContent(){
   
   (v.documents || []).forEach(function(doc, idx){
     html += '<div class="doc-chip">';
-    var thumbContent = (doc.type && doc.type.indexOf('image/') === 0 && doc.data)
-      ? '<img src="' + doc.data + '" alt="' + escapeHtml(doc.name) + '">'
-      : (doc.type && doc.type.indexOf('image/') === 0 ? '🖼' : '📄');
+    // Placeholder en attendant le chargement asynchrone de la vraie vignette
+    // (URL signée récupérée par loadDocThumbnails) — tous les documents sont
+    // stockés dans Supabase Storage via doc.path, jamais en base64 inline.
+    var thumbContent = (doc.type && doc.type.indexOf('image/') === 0) ? '🖼' : '📄';
     html += '<div class="doc-thumb" data-doc-idx="' + idx + '">' + thumbContent + '</div>';
     html += '<div class="doc-name" title="' + escapeHtml(doc.name) + '">' + escapeHtml(doc.name) + '</div>';
     html += '<button class="doc-remove" data-idx="' + idx + '" title="Supprimer" aria-label="Supprimer le document">✕</button>';
@@ -722,9 +723,8 @@ function renderContent(){
     el.onclick = function(){
       var idx = parseInt(el.getAttribute('data-doc-idx'), 10);
       var doc = v.documents && v.documents[idx];
-      if(!doc) return;
-      if(doc.path) openStorageDoc(doc.path);
-      else if(doc.data) window.open(doc.data, '_blank');
+      if(!doc || !doc.path) return;
+      openStorageDoc(doc.path);
     };
   });
 
