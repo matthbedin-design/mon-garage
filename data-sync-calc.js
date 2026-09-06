@@ -56,6 +56,220 @@ function setSyncStatus(mode, detail){
   else if(mode === 'error') label.textContent = detail || 'Erreur de connexion';
 }
 
+// ============================================================================
+// ÉTAPE 1 — MODÈLE NORMALISÉ
+// ============================================================================
+// L'état en mémoire (`state`) garde exactement la même forme qu'avant (objet
+// `vehicles` par id, `entries` par vehicleId, etc.) pour que tout le reste du
+// code (render.js, entry-modal.js, vehicle-modals.js, checklist-sessions.js)
+// continue de fonctionner sans modification. Ce qui change : `loadState()` et
+// `persist()` lisent/écrivent désormais dans des tables normalisées
+// (vehicles, entries, sessions, planned_interventions, user_settings) au lieu
+// d'un unique blob JSON — c'est ce qui permettra le partage par véhicule à
+// l'étape 2.
+//
+// `user_data` (l'ancien blob JSON) continue d'être écrit en parallèle, en
+// miroir, uniquement pour préserver le système de sauvegardes/versioning
+// existant (table user_data_history + trigger d'archivage). Il n'est plus
+// utilisé pour charger l'application.
+
+// Dernier instantané connu comme synchronisé, pour ne pousser vers Supabase
+// que ce qui a réellement changé plutôt que de tout réécrire à chaque sauvegarde.
+var lastSynced = { vehicles: {}, entries: {}, sessions: {}, planned: {} };
+
+function snapshotCurrent(){
+  return {
+    vehicles: JSON.parse(JSON.stringify(state.vehicles || {})),
+    entries: JSON.parse(JSON.stringify(state.entries || {})),
+    sessions: JSON.parse(JSON.stringify(state.sessions || {})),
+    planned: JSON.parse(JSON.stringify(state.plannedInterventions || {}))
+  };
+}
+
+function vehicleRow(id, v, sortOrder){
+  return {
+    id: id,
+    owner_id: currentUser.id,
+    name: v.name, plate: v.plate || '', color: v.color || '',
+    mileage: v.mileage || 0, vehicle_type: v.vehicleType || 'motorized',
+    enabled_types: v.enabledTypes || [], intervals: v.intervals || {},
+    documents: v.documents || [],
+    brand: v.brand || '', model: v.model || '', year: v.year || '', vin: v.vin || '',
+    fuel: v.fuel || '', first_reg_date: v.firstRegDate || '', insurance: v.insurance || '',
+    sort_order: sortOrder
+  };
+}
+
+function entryRow(id, vehicleId, e){
+  return {
+    id: id,
+    vehicle_id: vehicleId,
+    type_id: e.typeId,
+    date: e.date || null,
+    km: (e.km != null ? e.km : null),
+    cost: (e.cost != null ? e.cost : null),
+    notes: e.notes || '',
+    garage: e.garage || null,
+    supplier: e.supplier || null,
+    invoice_doc: e.invoiceDoc || null,
+    batch_id: e.batchId || null,
+    ct: e.ct || null,
+    documents: e.documents || [],
+    created_at: e.createdAt || new Date().toISOString(),
+    updated_at: e.updatedAt || null,
+    session_id: e.sessionId || null,
+    created_by: currentUser.id
+  };
+}
+
+function sessionRow(id, vehicleId, s){
+  return { id: id, vehicle_id: vehicleId, data: s, status: s.status || null, created_by: currentUser.id };
+}
+
+function plannedRow(id, vehicleId, p){
+  return {
+    id: id, vehicle_id: vehicleId, label: p.label || '', notes: p.notes || '',
+    created_at: p.createdAt || new Date().toISOString(),
+    source_session_id: p.sourceSessionId || null,
+    source_item_id: p.sourceItemId || null,
+    created_by: currentUser.id
+  };
+}
+
+// Compare l'état courant au dernier instantané synchronisé et construit la
+// liste des upserts/suppressions à effectuer, table par table.
+function buildSyncOps(){
+  var ops = {
+    vehiclesUpsert: [], vehiclesDelete: [],
+    entriesUpsert: [], entriesDelete: [],
+    sessionsUpsert: [], sessionsDelete: [],
+    plannedUpsert: [], plannedDelete: []
+  };
+
+  // Véhicules (l'ordre d'affichage vient de state.order)
+  var order = (state.order && state.order.length) ? state.order : Object.keys(state.vehicles || {});
+  order.forEach(function(id, idx){
+    var v = state.vehicles[id];
+    if(!v) return;
+    var row = vehicleRow(id, v, idx);
+    // On compare la ligne complète (v + position dans `order`), pas juste v,
+    // pour détecter aussi un simple changement d'ordre d'affichage.
+    var prevRow = lastSynced._vehicleRows && lastSynced._vehicleRows[id];
+    if(!prevRow || JSON.stringify(prevRow) !== JSON.stringify(row)) ops.vehiclesUpsert.push(row);
+  });
+  Object.keys(lastSynced.vehicles).forEach(function(id){
+    if(!state.vehicles[id]) ops.vehiclesDelete.push(id);
+  });
+
+  // Entrées
+  var currentEntryIds = {};
+  Object.keys(state.entries || {}).forEach(function(vehicleId){
+    (state.entries[vehicleId] || []).forEach(function(e){
+      currentEntryIds[e.id] = true;
+      var row = entryRow(e.id, vehicleId, e);
+      var prev = lastSynced._entryRows && lastSynced._entryRows[e.id];
+      if(!prev || JSON.stringify(prev) !== JSON.stringify(row)) ops.entriesUpsert.push(row);
+    });
+  });
+  Object.keys(lastSynced.entries || {}).forEach(function(vehicleId){
+    (lastSynced.entries[vehicleId] || []).forEach(function(e){
+      if(!currentEntryIds[e.id]) ops.entriesDelete.push(e.id);
+    });
+  });
+
+  // Sessions
+  var currentSessionIds = {};
+  Object.keys(state.sessions || {}).forEach(function(vehicleId){
+    (state.sessions[vehicleId] || []).forEach(function(s){
+      currentSessionIds[s.id] = true;
+      var row = sessionRow(s.id, vehicleId, s);
+      var prev = lastSynced._sessionRows && lastSynced._sessionRows[s.id];
+      if(!prev || JSON.stringify(prev) !== JSON.stringify(row)) ops.sessionsUpsert.push(row);
+    });
+  });
+  Object.keys(lastSynced.sessions || {}).forEach(function(vehicleId){
+    (lastSynced.sessions[vehicleId] || []).forEach(function(s){
+      if(!currentSessionIds[s.id]) ops.sessionsDelete.push(s.id);
+    });
+  });
+
+  // Interventions à prévoir
+  var currentPlannedIds = {};
+  Object.keys(state.plannedInterventions || {}).forEach(function(vehicleId){
+    (state.plannedInterventions[vehicleId] || []).forEach(function(p){
+      currentPlannedIds[p.id] = true;
+      var row = plannedRow(p.id, vehicleId, p);
+      var prev = lastSynced._plannedRows && lastSynced._plannedRows[p.id];
+      if(!prev || JSON.stringify(prev) !== JSON.stringify(row)) ops.plannedUpsert.push(row);
+    });
+  });
+  Object.keys(lastSynced.planned || {}).forEach(function(vehicleId){
+    (lastSynced.planned[vehicleId] || []).forEach(function(p){
+      if(!currentPlannedIds[p.id]) ops.plannedDelete.push(p.id);
+    });
+  });
+
+  return ops;
+}
+
+// Instantané enrichi : on garde aussi les "rows" telles qu'envoyées à Supabase
+// (et pas seulement les objets d'état) pour pouvoir comparer à l'identique au
+// prochain appel, sort_order et champs dérivés inclus.
+function refreshLastSynced(){
+  var snap = snapshotCurrent();
+  snap._vehicleRows = {};
+  var order = (state.order && state.order.length) ? state.order : Object.keys(state.vehicles || {});
+  order.forEach(function(id, idx){
+    var v = state.vehicles[id];
+    if(v) snap._vehicleRows[id] = vehicleRow(id, v, idx);
+  });
+  snap._entryRows = {};
+  Object.keys(state.entries || {}).forEach(function(vehicleId){
+    (state.entries[vehicleId] || []).forEach(function(e){
+      snap._entryRows[e.id] = entryRow(e.id, vehicleId, e);
+    });
+  });
+  snap._sessionRows = {};
+  Object.keys(state.sessions || {}).forEach(function(vehicleId){
+    (state.sessions[vehicleId] || []).forEach(function(s){
+      snap._sessionRows[s.id] = sessionRow(s.id, vehicleId, s);
+    });
+  });
+  snap._plannedRows = {};
+  Object.keys(state.plannedInterventions || {}).forEach(function(vehicleId){
+    (state.plannedInterventions[vehicleId] || []).forEach(function(p){
+      snap._plannedRows[p.id] = plannedRow(p.id, vehicleId, p);
+    });
+  });
+  lastSynced = snap;
+}
+
+async function applySyncOps(ops){
+  var tasks = [];
+  if(ops.vehiclesUpsert.length) tasks.push(sb.from('vehicles').upsert(ops.vehiclesUpsert));
+  if(ops.vehiclesDelete.length) tasks.push(sb.from('vehicles').delete().in('id', ops.vehiclesDelete));
+  if(ops.entriesUpsert.length) tasks.push(sb.from('entries').upsert(ops.entriesUpsert));
+  if(ops.entriesDelete.length) tasks.push(sb.from('entries').delete().in('id', ops.entriesDelete));
+  if(ops.sessionsUpsert.length) tasks.push(sb.from('sessions').upsert(ops.sessionsUpsert));
+  if(ops.sessionsDelete.length) tasks.push(sb.from('sessions').delete().in('id', ops.sessionsDelete));
+  if(ops.plannedUpsert.length) tasks.push(sb.from('planned_interventions').upsert(ops.plannedUpsert));
+  if(ops.plannedDelete.length) tasks.push(sb.from('planned_interventions').delete().in('id', ops.plannedDelete));
+
+  // Réglages restants (journal, types, checklist) : toujours réécrits en
+  // entier, volume négligeable et jamais partagés entre utilisateurs.
+  tasks.push(sb.from('user_settings').upsert({
+    user_id: currentUser.id,
+    journal: state.journal || [],
+    types: state.types || [],
+    checklist_items: state.checklistItems || [],
+    updated_at: new Date().toISOString()
+  }));
+
+  var results = await Promise.all(tasks);
+  var firstError = results.map(function(r){ return r.error; }).filter(Boolean)[0];
+  if(firstError) throw firstError;
+}
+
 async function persist(){
   if(!cloudReady || !currentUser){
     console.error('persist() appelé sans session cloud active — sauvegarde ignorée.');
@@ -66,38 +280,39 @@ async function persist(){
   setSyncStatus('saving');
   isWriting = true;
   try {
+    var ops = buildSyncOps();
+    await applySyncOps(ops);
+    refreshLastSynced();
+
+    // Miroir de l'état complet dans user_data : sert uniquement à préserver le
+    // système de sauvegardes/versioning existant (table user_data_history,
+    // archivée via un trigger sur cette table). Ce n'est plus la source
+    // utilisée pour charger l'application (voir loadState) — un échec ici
+    // n'est donc pas bloquant, les tables normalisées ci-dessus font foi.
     var nowIso = new Date().toISOString();
     var payload = { user_id: currentUser.id, state: state, updated_at: nowIso };
     var res;
-
     if(lastKnownUpdatedAt === null){
-      // Pas encore de version serveur connue (première sauvegarde de la session) :
-      // upsert normal. Un conflit avec une écriture concurrente à cet instant précis
-      // reste possible ici, mais c'est une fenêtre bien plus étroite que l'ancien
-      // comportement (upsert systématique à chaque sauvegarde).
       res = await sb.from('user_data').upsert(payload, { onConflict: 'user_id' }).select('updated_at').single();
     } else {
-      // Écriture conditionnelle : on n'écrase que si la ligne serveur a toujours le
-      // updated_at qu'on avait chargé/vu en dernier. Sinon, quelqu'un d'autre a
-      // sauvegardé entre-temps (autre appareil) et on ne doit pas écraser son travail.
       res = await sb.from('user_data').update({ state: state, updated_at: nowIso })
         .eq('user_id', currentUser.id).eq('updated_at', lastKnownUpdatedAt)
         .select('updated_at').single();
     }
-
     if(res.error){
-      // PGRST116 = aucune ligne ne correspondait au filtre .eq('updated_at', ...) :
-      // c'est un conflit de version, pas une erreur réseau.
       if(res.error.code === 'PGRST116'){
-        await handleSyncConflict();
-        return false;
+        // Une autre session a écrit le miroir entre-temps : sans gravité, les
+        // tables normalisées viennent d'être sauvegardées avec succès
+        // ci-dessus. On rafraîchit juste le jeton de concurrence.
+        var latest = await sb.from('user_data').select('updated_at').eq('user_id', currentUser.id).single();
+        if(latest.data) lastKnownUpdatedAt = latest.data.updated_at;
+      } else {
+        console.error('Erreur miroir user_data (sauvegardes/historique) :', res.error);
       }
-      console.error('Erreur sauvegarde cloud:', res.error);
-      setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
-      return false;
+    } else {
+      lastKnownUpdatedAt = res.data.updated_at;
     }
 
-    lastKnownUpdatedAt = res.data.updated_at;
     setSyncStatus('synced');
     return true;
   } catch(e) {
@@ -106,30 +321,9 @@ async function persist(){
     return false;
   } finally {
     // Petit délai avant de rebaisser le flag : laisse le temps à l'écho realtime
-    // de notre propre écriture d'arriver et d'être ignoré, plutôt que de comparer
-    // des chaînes de timestamp dont le format peut différer entre le client et Postgres.
+    // de notre propre écriture d'arriver et d'être ignoré.
     setTimeout(function(){ isWriting = false; }, 2000);
   }
-}
-
-// Un autre appareil a sauvegardé entre-temps : on ne perd rien silencieusement.
-// On recharge la version la plus récente du serveur et on prévient clairement,
-// pour que l'utilisateur puisse refaire sa dernière action si elle n'a pas été prise
-// en compte.
-async function handleSyncConflict(){
-  console.error('Conflit de synchronisation détecté : une version plus récente existe côté serveur.');
-  try {
-    var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
-    if(res.data){
-      state = res.data.state;
-      lastKnownUpdatedAt = res.data.updated_at;
-      renderContent();
-    }
-  } catch(e){
-    console.error('Erreur rechargement après conflit:', e);
-  }
-  setSyncStatus('error', 'Modifié ailleurs — dernière version rechargée');
-  await showAlert('Ce carnet a été modifié depuis un autre appareil au même moment. La dernière version a été rechargée automatiquement — si votre dernière action n\'apparaît pas, merci de la refaire.');
 }
 
 async function loadState(){
@@ -140,15 +334,90 @@ async function loadState(){
   }
 
   try {
-    var res = await sb.from('user_data').select('state, updated_at').eq('user_id', currentUser.id).single();
-    if(res.data && res.data.state){
-      state = res.data.state;
-      lastKnownUpdatedAt = res.data.updated_at;
-    } else {
-      initDefaultState();
-      lastKnownUpdatedAt = null;
+    var results = await Promise.all([
+      sb.from('vehicles').select('*').order('sort_order', { ascending: true }),
+      sb.from('entries').select('*'),
+      sb.from('sessions').select('*'),
+      sb.from('planned_interventions').select('*'),
+      sb.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle()
+    ]);
+    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4];
+
+    var firstErr = results.map(function(r){ return r.error; }).filter(Boolean)[0];
+    if(firstErr) throw firstErr;
+
+    var vehicles = {}, order = [];
+    (vehRes.data || []).forEach(function(row){
+      vehicles[row.id] = {
+        name: row.name, plate: row.plate, color: row.color, mileage: row.mileage,
+        vehicleType: row.vehicle_type, enabledTypes: row.enabled_types || [],
+        intervals: row.intervals || {}, documents: row.documents || [],
+        brand: row.brand, model: row.model, year: row.year, vin: row.vin,
+        fuel: row.fuel, firstRegDate: row.first_reg_date, insurance: row.insurance
+      };
+      order.push(row.id);
+    });
+
+    var entries = {};
+    (entRes.data || []).forEach(function(row){
+      if(!entries[row.vehicle_id]) entries[row.vehicle_id] = [];
+      var e = {
+        id: row.id, typeId: row.type_id, date: row.date,
+        km: row.km, cost: row.cost, notes: row.notes,
+        garage: row.garage, supplier: row.supplier,
+        invoiceDoc: row.invoice_doc, batchId: row.batch_id, ct: row.ct,
+        documents: row.documents || [],
+        createdAt: row.created_at, updatedAt: row.updated_at,
+        sessionId: row.session_id
+      };
+      if(!e.ct) delete e.ct;
+      if(!e.invoiceDoc) delete e.invoiceDoc;
+      entries[row.vehicle_id].push(e);
+    });
+
+    var sessions = {};
+    (sesRes.data || []).forEach(function(row){
+      if(!sessions[row.vehicle_id]) sessions[row.vehicle_id] = [];
+      var s = Object.assign({}, row.data, { id: row.id });
+      sessions[row.vehicle_id].push(s);
+    });
+
+    var planned = {};
+    (planRes.data || []).forEach(function(row){
+      if(!planned[row.vehicle_id]) planned[row.vehicle_id] = [];
+      planned[row.vehicle_id].push({
+        id: row.id, label: row.label, notes: row.notes,
+        createdAt: row.created_at,
+        sourceSessionId: row.source_session_id,
+        sourceItemId: row.source_item_id
+      });
+    });
+
+    var settings = settRes.data || {};
+
+    state = {
+      vehicles: vehicles,
+      entries: entries,
+      order: order,
+      types: (settings.types && settings.types.length) ? settings.types : DEFAULT_TYPES.slice(),
+      journal: settings.journal || [],
+      plannedInterventions: planned,
+      sessions: sessions,
+      checklistItems: (settings.checklist_items && settings.checklist_items.length) ? settings.checklist_items : DEFAULT_CHECKLIST_ITEMS.slice()
+    };
+
+    refreshLastSynced();
+
+    // Récupère le jeton de concurrence du miroir user_data (utilisé par
+    // persist()/sauvegardes), sans s'en servir pour charger les données.
+    var mirror = await sb.from('user_data').select('updated_at').eq('user_id', currentUser.id).maybeSingle();
+    lastKnownUpdatedAt = mirror.data ? mirror.data.updated_at : null;
+    if(!mirror.data){
+      // Première synchro sous le nouveau schéma : initialise le miroir pour
+      // que le système de sauvegardes/historique s'active dès maintenant.
       await persist();
     }
+
     subscribeRealtime();
     setSyncStatus('synced');
   } catch(e) {
@@ -216,9 +485,12 @@ async function signInEmail(){
 }
 
 // ---- Synchro en temps réel ----
-// Écoute les changements sur la ligne de cet utilisateur dans user_data : quand une
-// saisie est faite depuis un autre appareil, on recharge l'état et on redessine
-// automatiquement, sans avoir besoin de recharger la page.
+// Écoute les changements sur les tables normalisées : quand une saisie est
+// faite depuis un autre appareil, on recharge l'état et on redessine
+// automatiquement, sans avoir besoin de recharger la page. Le filtrage des
+// lignes visibles est assuré par les policies RLS de chaque table (un
+// utilisateur ne reçoit que les événements sur ses propres véhicules, et à
+// l'étape 2, ceux qui lui sont partagés).
 function subscribeRealtime(){
   if(!cloudReady || !currentUser || !sb) return;
 
@@ -228,23 +500,17 @@ function subscribeRealtime(){
     realtimeChannel = null;
   }
 
-  realtimeChannel = sb
-    .channel('user_data_changes_' + currentUser.id)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'user_data',
-      filter: 'user_id=eq.' + currentUser.id
-    }, function(payload){
-      var row = payload.new;
-      if(!row || !row.state) return;
-      // Ignore l'écho de notre propre écriture en cours (voir isWriting dans persist())
-      if(isWriting) return;
+  var reload = debounce(function(){
+    if(isWriting) return; // ignore l'écho de notre propre écriture en cours
+    loadState();
+  }, 400);
 
-      state = row.state;
-      lastKnownUpdatedAt = row.updated_at;
-      renderContent();
-    })
+  realtimeChannel = sb
+    .channel('carnet_changes_' + currentUser.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, reload)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, reload)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, reload)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'planned_interventions' }, reload)
     .subscribe();
 }
 
