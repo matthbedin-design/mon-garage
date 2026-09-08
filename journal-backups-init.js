@@ -140,11 +140,77 @@ if(syncStatusEl) syncStatusEl.addEventListener('click', function(){
 });
 
 var accountBtn = document.getElementById('accountBtn');
-if(accountBtn) accountBtn.addEventListener('click', async function(){
+if(accountBtn) accountBtn.addEventListener('click', function(){
   if(!currentUser) return;
-  var ok = await showConfirm('Se déconnecter ?', 'Se déconnecter');
-  if(ok) signOutCloud();
+  openAccountModal();
 });
+
+function openAccountModal(){
+  var modal = document.getElementById('modal');
+  modal.innerHTML =
+    '<h3>Compte <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:12px;">' + escapeHtml(currentUser.email || '') + '</div>' +
+    '<button class="btn btn-ghost" id="changePasswordBtn" style="width:100%; margin-bottom:8px;">🔑 Changer mon mot de passe</button>' +
+    '<button class="btn btn-ghost" id="signOutBtn" style="width:100%;">Se déconnecter</button>' +
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  document.getElementById('changePasswordBtn').onclick = openChangePasswordModal;
+
+  document.getElementById('signOutBtn').onclick = async function(){
+    var ok = await showConfirm('Se déconnecter ?', 'Se déconnecter');
+    if(ok) signOutCloud();
+  };
+}
+
+function openChangePasswordModal(){
+  var modal = document.getElementById('modal');
+  modal.innerHTML =
+    '<h3>Changer mon mot de passe <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field"><label>Nouveau mot de passe</label><input type="password" id="newPasswordInput" placeholder="••••••••" autocomplete="new-password"></div>' +
+    '<div class="field"><label>Confirmer le mot de passe</label><input type="password" id="confirmPasswordInput" placeholder="••••••••" autocomplete="new-password"></div>' +
+    '<div id="changePasswordStatus" style="text-align:center; font-size:12.5px; margin-top:4px; min-height:16px;"></div>' +
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      '<button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Annuler</button>' +
+      '<button class="btn btn-primary" id="saveNewPasswordBtn">Enregistrer</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  document.getElementById('saveNewPasswordBtn').onclick = async function(){
+    var pwd = document.getElementById('newPasswordInput').value;
+    var confirmPwd = document.getElementById('confirmPasswordInput').value;
+    var statusEl = document.getElementById('changePasswordStatus');
+
+    if(!pwd || pwd.length < 6){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères.';
+      return;
+    }
+    if(pwd !== confirmPwd){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+      return;
+    }
+
+    statusEl.style.color = '';
+    statusEl.textContent = 'Enregistrement...';
+    var res = await sb.auth.updateUser({ password: pwd });
+    if(res.error){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Erreur : ' + res.error.message;
+      return;
+    }
+
+    closeModal();
+    await showAlert('Mot de passe mis à jour avec succès.');
+  };
+}
 
 var addBtn = document.getElementById('addBtn');
 if(addBtn) addBtn.addEventListener('click', function(){ openEntryModal(null); });
