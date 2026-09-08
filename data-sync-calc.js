@@ -556,6 +556,46 @@ async function signInEmail(){
   }
 }
 
+// ---- Bascule entre connexion par lien magique et par mot de passe ----
+var authMode = 'magiclink'; // 'magiclink' ou 'password'
+
+function setAuthMode(mode){
+  authMode = mode;
+  var passwordField = document.getElementById('passwordField');
+  var toggle = document.getElementById('authModeToggle');
+  var loginBtn = document.getElementById('emailLoginBtn');
+  var statusEl = document.getElementById('authStatus');
+  if(!passwordField || !toggle || !loginBtn) return;
+
+  if(mode === 'password'){
+    passwordField.style.display = 'block';
+    toggle.textContent = 'Se connecter avec un lien magique';
+    loginBtn.textContent = 'Se connecter';
+  } else {
+    passwordField.style.display = 'none';
+    loginBtn.textContent = 'Se connecter';
+    toggle.textContent = 'Se connecter avec un mot de passe';
+  }
+  if(statusEl) statusEl.innerText = '';
+}
+
+async function signInWithPassword(){
+  var email = document.getElementById('emailInput').value.trim();
+  var password = document.getElementById('passwordInput').value;
+  var statusEl = document.getElementById('authStatus');
+  if(!email || !password){
+    if(statusEl) statusEl.innerText = 'Merci de saisir l\'e-mail et le mot de passe.';
+    return;
+  }
+  if(statusEl) statusEl.innerText = 'Connexion...';
+  var res = await sb.auth.signInWithPassword({ email: email, password: password });
+  if(res.error){
+    if(statusEl) statusEl.innerText = 'Erreur : ' + res.error.message;
+  }
+  // Si succès, onAuthStateChange (dans journal-backups-init.js) prend le relais
+  // et masque l'overlay automatiquement — rien d'autre à faire ici.
+}
+
 // ---- Synchro en temps réel ----
 // Écoute les changements sur les tables normalisées : quand une saisie est
 // faite depuis un autre appareil, on recharge l'état et on redessine

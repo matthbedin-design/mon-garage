@@ -118,7 +118,21 @@ async function restoreBackup(historyId){
 
 // ---- Événements globaux & Démarrage ----
 var emailBtn = document.getElementById('emailLoginBtn');
-if(emailBtn) emailBtn.addEventListener('click', signInEmail);
+if(emailBtn) emailBtn.addEventListener('click', function(){
+  if(authMode === 'password') signInWithPassword();
+  else signInEmail();
+});
+
+var authModeToggle = document.getElementById('authModeToggle');
+if(authModeToggle) authModeToggle.addEventListener('click', function(e){
+  e.preventDefault();
+  setAuthMode(authMode === 'password' ? 'magiclink' : 'password');
+});
+
+var passwordInputEl = document.getElementById('passwordInput');
+if(passwordInputEl) passwordInputEl.addEventListener('keydown', function(e){
+  if(e.key === 'Enter' && authMode === 'password') signInWithPassword();
+});
 
 var syncStatusEl = document.getElementById('syncStatus');
 if(syncStatusEl) syncStatusEl.addEventListener('click', function(){

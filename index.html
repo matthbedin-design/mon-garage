@@ -27,8 +27,15 @@
       <label>Adresse e-mail</label>
       <input type="email" id="emailInput" placeholder="votre@email.com">
     </div>
+    <div class="field" id="passwordField" style="display:none;">
+      <label>Mot de passe</label>
+      <input type="password" id="passwordInput" placeholder="••••••••">
+    </div>
     <button class="auth-btn" id="emailLoginBtn">Se connecter</button>
     <div class="auth-status" id="authStatus"></div>
+    <div class="auth-toggle" style="text-align:center; margin-top:12px;">
+      <a href="#" id="authModeToggle" style="font-size:13px; color:var(--yellow, #F0B429); text-decoration:underline; cursor:pointer;">Se connecter avec un mot de passe</a>
+    </div>
   </div>
 </div>
 
