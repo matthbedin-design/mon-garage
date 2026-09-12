@@ -1,6 +1,14 @@
 // ---- Export de l'historique (archive / revente) ----
 function csvEscape(val){
   var s = (val == null) ? '' : String(val);
+  // Neutralise l'injection de formule ("CSV injection") : un tableur (Excel,
+  // LibreOffice...) interprète comme une formule toute cellule commençant par
+  // =, +, -, @, une tabulation ou un retour chariot — un champ libre (garage,
+  // fournisseur, notes) pourrait ainsi contenir une formule active (ex.
+  // HYPERLINK exfiltrant des données) exécutée à la réouverture du fichier.
+  // On neutralise en préfixant d'une apostrophe : invisible à l'affichage
+  // dans un tableur, mais empêche l'interprétation comme formule.
+  if(/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   if(/[";\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
   return s;
 }

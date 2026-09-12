@@ -188,9 +188,9 @@ function openChangePasswordModal(){
     var confirmPwd = document.getElementById('confirmPasswordInput').value;
     var statusEl = document.getElementById('changePasswordStatus');
 
-    if(!pwd || pwd.length < 6){
+    if(!pwd || pwd.length < 8){
       statusEl.style.color = 'var(--red)';
-      statusEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères.';
+      statusEl.textContent = 'Le mot de passe doit contenir au moins 8 caractères.';
       return;
     }
     if(pwd !== confirmPwd){
