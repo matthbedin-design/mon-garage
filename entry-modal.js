@@ -315,7 +315,7 @@ function openEntryModal(entryId){
         if(!v.intervals) v.intervals = {};
         v.intervals[id] = { km: null, months: null };
         logEvent(activeVehicleId, 'Type d\'intervention créé : ' + name);
-        await persist();
+        await warnIfSaveFailed(await persist());
 
         // Ajoute la puce directement dans la liste déjà affichée, sans tout reconstruire.
         var list = document.getElementById('typeSelectList');
@@ -463,9 +463,10 @@ async function saveEntry(){
   pendingInvoiceFile = null;
   removeInvoiceRequested = false;
 
-  await persist();
+  var saved = await persist();
   closeModal();
   renderContent();
+  await warnIfSaveFailed(saved);
 }
 
 // Supprime le fichier de facture en Storage seulement si plus aucune autre
@@ -491,9 +492,10 @@ async function deleteEntry(id){
   }
 
   state.entries[activeVehicleId] = list.filter(function(e){ return e.id !== id; });
-  await persist();
+  var saved = await persist();
   closeModal();
   renderContent();
+  await warnIfSaveFailed(saved);
 }
 
 function closeModal(){

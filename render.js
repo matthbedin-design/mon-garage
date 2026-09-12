@@ -537,7 +537,7 @@ function renderContent(){
     plateInput.onchange = async function(){
       v.plate = plateInput.value.trim();
       logEvent(activeVehicleId, 'Immatriculation mise à jour');
-      await persist();
+      await warnIfSaveFailed(await persist());
     };
   }
 
@@ -568,7 +568,7 @@ function renderContent(){
 
       v.mileage = val;
       logEvent(activeVehicleId, 'Kilométrage mis à jour : ' + fmtKm(val));
-      await persist();
+      await warnIfSaveFailed(await persist());
       renderContent();
     };
   }
@@ -708,7 +708,7 @@ function renderContent(){
         v.documents.push({ name: file.name, type: storedType, path: path });
 
         logEvent(activeVehicleId, 'Document ajouté : ' + file.name);
-        await persist();
+        await warnIfSaveFailed(await persist());
         renderContent();
       } catch(err) {
         console.error(err);
@@ -737,7 +737,7 @@ function renderContent(){
         var removed = v.documents.splice(idx, 1)[0];
         if(removed.path) await deleteDocFromStorage(removed.path);
         logEvent(activeVehicleId, 'Document supprimé : ' + removed.name);
-        await persist();
+        await warnIfSaveFailed(await persist());
         renderContent();
       }
     };

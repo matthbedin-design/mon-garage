@@ -432,10 +432,11 @@ function openMaintenanceSheetModal(vehicleId){
     };
     state.sessions[vehicleId].push(session);
     logEvent(vehicleId, 'Fiche d\'entretien créée (' + selectedTypeIds.length + ' intervention(s), ' + selectedChecklistIds.length + ' vérification(s))');
-    await persist();
+    var saved = await persist();
 
     closeModal();
     generateMaintenanceSheet(vehicleId, selectedTypeIds, selectedChecklistIds);
+    await warnIfSaveFailed(saved);
   };
 }
 

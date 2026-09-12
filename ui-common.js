@@ -50,6 +50,20 @@ function showAlert(message){
   });
 }
 
+// Petit garde-fou générique à utiliser après tout `persist()` dont le
+// résultat n'était jusqu'ici pas vérifié : avant ce correctif, un échec de
+// sauvegarde (réseau coupé, session expirée...) passait inaperçu — la
+// modale se fermait normalement, tout avait l'air d'avoir marché, alors que
+// la donnée saisie n'existait plus qu'en mémoire locale et disparaissait
+// silencieusement au rechargement suivant. Renvoie `saved` tel quel pour
+// permettre d'enchaîner `if(!(await warnIfSaveFailed(saved))) return;`.
+async function warnIfSaveFailed(saved){
+  if(!saved){
+    await showAlert('La sauvegarde a échoué — vérifiez votre connexion. Cette modification n\'a peut-être pas été enregistrée sur le serveur, réessayez.');
+  }
+  return saved;
+}
+
 function escapeHtml(str){
   if(!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

@@ -17,7 +17,7 @@ async function addPlannedIntervention(vehicleId, label, notes, sourceSessionId, 
   };
   state.plannedInterventions[vehicleId].push(item);
   logEvent(vehicleId, 'Intervention à prévoir ajoutée : ' + label);
-  await persist();
+  await warnIfSaveFailed(await persist());
   return item.id;
 }
 
@@ -26,7 +26,7 @@ async function removePlannedIntervention(vehicleId, id){
   var item = list.filter(function(p){ return p.id === id; })[0];
   state.plannedInterventions[vehicleId] = list.filter(function(p){ return p.id !== id; });
   if(item) logEvent(vehicleId, 'Intervention à prévoir retirée : ' + item.label);
-  await persist();
+  await warnIfSaveFailed(await persist());
 }
 
 // Ouvre le formulaire d'intervention habituel, pré-rempli avec le libellé/la remarque
@@ -112,7 +112,7 @@ function openChecklistManagerModal(returnToVehicleId){
     if(removeBtn) removeBtn.onclick = async function(){
       var id = row.getAttribute('data-checklist-id');
       state.checklistItems = state.checklistItems.filter(function(c){ return c.id !== id; });
-      await persist();
+      await warnIfSaveFailed(await persist());
       row.remove();
     };
     var labelInput = row.querySelector('.checklist-item-label');
@@ -123,7 +123,7 @@ function openChecklistManagerModal(returnToVehicleId){
       var newLabel = labelInput.value.trim();
       if(!newLabel){ labelInput.value = item.label; return; }
       item.label = newLabel;
-      await persist();
+      await warnIfSaveFailed(await persist());
     };
     var themeInput = row.querySelector('.checklist-item-theme');
     if(themeInput) themeInput.onchange = async function(){
@@ -131,7 +131,7 @@ function openChecklistManagerModal(returnToVehicleId){
       var item = state.checklistItems.filter(function(c){ return c.id === id; })[0];
       if(!item) return;
       item.theme = themeInput.value.trim() || null;
-      await persist();
+      await warnIfSaveFailed(await persist());
     };
   }
   Array.prototype.forEach.call(modal.querySelectorAll('.checklist-row'), bindRow);
@@ -139,7 +139,7 @@ function openChecklistManagerModal(returnToVehicleId){
   document.getElementById('addChecklistItemBtn').onclick = async function(){
     var id = genId('chk');
     state.checklistItems.push({ id: id, label: '', theme: null });
-    await persist();
+    await warnIfSaveFailed(await persist());
     var list = document.getElementById('checklistItemsList');
     var row = document.createElement('div');
     row.className = 'ct-defect-row checklist-row';
@@ -414,7 +414,7 @@ function openSessionDetailModal(vehicleId, sessionId){
       var checkedRadio = row.querySelector('.session-status-radio:checked');
       res.status = checkedRadio ? checkedRadio.value : null;
       res.anomaly = anomalyInput.value.trim() || null;
-      persist();
+      persist().then(warnIfSaveFailed);
     }
     Array.prototype.forEach.call(radios, function(radio){ radio.onchange = function(){ saveResult(); openSessionDetailModal(vehicleId, sessionId); }; });
     anomalyInput.onchange = saveResult;
@@ -428,7 +428,7 @@ function openSessionDetailModal(vehicleId, sessionId){
       var noteText = res ? (res.anomaly || '') : '';
       var plannedId = await addPlannedIntervention(vehicleId, item ? item.label : 'Point à vérifier', noteText, session.id, itemId);
       if(res) res.plannedInterventionId = plannedId;
-      await persist();
+      await warnIfSaveFailed(await persist());
       openSessionDetailModal(vehicleId, sessionId);
     };
   });
@@ -481,7 +481,7 @@ function openSessionDetailModal(vehicleId, sessionId){
       var tObj = state.types.filter(function(t){ return t.id === typeId; })[0];
       logEvent(vehicleId, 'Intervention réalisée (fiche du ' + fmtDate(session.date) + ') : ' + (tObj ? tObj.label : typeId));
 
-      await persist();
+      await warnIfSaveFailed(await persist());
       openSessionDetailModal(vehicleId, session.id);
     };
   });
@@ -489,9 +489,10 @@ function openSessionDetailModal(vehicleId, sessionId){
   var completeBtn = document.getElementById('completeSessionBtn');
   if(completeBtn) completeBtn.onclick = async function(){
     session.status = 'completed';
-    await persist();
+    var saved = await persist();
     closeModal();
     renderContent();
+    await warnIfSaveFailed(saved);
   };
 
   var deleteSessionBtn = document.getElementById('deleteSessionBtn');
@@ -499,9 +500,10 @@ function openSessionDetailModal(vehicleId, sessionId){
     var ok = await showConfirm('Supprimer cette fiche ? Les interventions déjà enregistrées à partir d\'elle resteront dans l\'historique.', 'Supprimer');
     if(!ok) return;
     state.sessions[vehicleId] = state.sessions[vehicleId].filter(function(s){ return s.id !== session.id; });
-    await persist();
+    var saved = await persist();
     closeModal();
     renderContent();
+    await warnIfSaveFailed(saved);
   };
 }
 

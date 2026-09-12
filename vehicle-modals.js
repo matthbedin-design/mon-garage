@@ -183,7 +183,7 @@ function openSettingsModal(){
   Array.prototype.forEach.call(modal.querySelectorAll('[data-deltype]'), function(btn){
     btn.onclick = async function(){
       collectSettingsFormData(v, modal, swatchWrap);
-      await persist();
+      await warnIfSaveFailed(await persist());
       var removed = await deleteType(btn.getAttribute('data-deltype'));
       if(removed) openSettingsModal();
     };
@@ -192,7 +192,7 @@ function openSettingsModal(){
   var openTypesManagerBtn = document.getElementById('openTypesManagerBtn');
   if(openTypesManagerBtn) openTypesManagerBtn.onclick = function(){
     collectSettingsFormData(v, modal, swatchWrap);
-    persist();
+    persist().then(warnIfSaveFailed);
     openTypesManagerModal();
   };
 
@@ -214,7 +214,7 @@ function openSettingsModal(){
     v.intervals[id] = { km: null, months: null };
 
     logEvent(activeVehicleId, 'Type d\'intervention créé : ' + name);
-    await persist();
+    await warnIfSaveFailed(await persist());
     openSettingsModal();
   };
 
@@ -342,7 +342,7 @@ function openShareVehicleModal(vehicleId){
       document.getElementById('shareEmailInput').value = '';
       var roleLogLabel = (role === 'editor') ? 'édition' : (role === 'contributor' ? 'contributeur' : 'lecture seule');
       logEvent(vehicleId, 'Véhicule partagé avec ' + email + ' (' + roleLogLabel + ')');
-      await persist();
+      await warnIfSaveFailed(await persist());
       refreshShareList();
     } catch(e){
       console.error('Erreur invitation de partage:', e);
@@ -368,8 +368,9 @@ async function deleteType(typeId){
   });
 
   logEvent(null, 'Type d\'intervention supprimé (tous véhicules) : ' + t.label);
-  await persist();
+  var saved = await persist();
   renderContent();
+  await warnIfSaveFailed(saved);
   return true;
 }
 
@@ -441,7 +442,7 @@ function renderTypesManagerModal(){
       if(t.label !== newLabel){
         logEvent(null, 'Type d\'intervention renommé : "' + t.label + '" -> "' + newLabel + '"');
         t.label = newLabel;
-        await persist();
+        await warnIfSaveFailed(await persist());
         renderContent();
       }
     };
@@ -453,7 +454,7 @@ function renderTypesManagerModal(){
       var t = state.types.filter(function(x){ return x.id === id; })[0];
       if(!t) return;
       t.category = sel.value;
-      await persist();
+      await warnIfSaveFailed(await persist());
       renderContent();
     };
   });
@@ -467,7 +468,7 @@ function renderTypesManagerModal(){
       var val = inp.value === '' ? null : parseInt(inp.value, 10);
       if(val !== null && val < 0){ inp.value = ''; val = null; }
       t[field] = val;
-      await persist();
+      await warnIfSaveFailed(await persist());
       renderContent();
     };
   });
@@ -489,7 +490,7 @@ function renderTypesManagerModal(){
         vv.enabledTypes.splice(idx, 1);
         logEvent(vehicleId, 'Type désactivé : ' + typeId);
       }
-      await persist();
+      await warnIfSaveFailed(await persist());
     };
   });
 
@@ -526,7 +527,7 @@ function renderTypesManagerModal(){
     });
 
     logEvent(null, 'Type d\'intervention créé : ' + name);
-    await persist();
+    await warnIfSaveFailed(await persist());
     renderTypesManagerModal();
   };
 }
@@ -579,6 +580,9 @@ function openAddVehicleModal(){
     var name = document.getElementById('nv-name').value.trim();
     if(!name){ await showAlert('Merci de donner un nom au véhicule.'); return; }
 
+    var createBtn = document.getElementById('createVehicleBtn');
+    createBtn.disabled = true; // évite un double-clic créant deux véhicules pendant l'enregistrement
+
     var vehicleType = nvTypeSelect ? nvTypeSelect.value : 'motorized';
     var km = parseInt(document.getElementById('nv-km').value || '0', 10);
     var selected = swatchWrap.querySelector('.swatch.selected');
@@ -597,9 +601,10 @@ function openAddVehicleModal(){
     activeVehicleId = id;
 
     logEvent(id, 'Véhicule créé');
-    await persist();
+    var saved = await persist();
     closeModal();
     render();
+    await warnIfSaveFailed(saved);
   };
 }
 
@@ -647,8 +652,9 @@ async function deleteVehicle(id){
   delete state.plannedInterventions[id];
   activeVehicleId = DASHBOARD_ID;
 
-  await persist();
+  var saved = await persist();
   closeModal();
   render();
+  await warnIfSaveFailed(saved);
 }
 
