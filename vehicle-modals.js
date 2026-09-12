@@ -603,11 +603,41 @@ function openAddVehicleModal(){
   };
 }
 
+// Rassemble tous les chemins de stockage liés à un véhicule (documents du
+// véhicule + factures/documents de chacune de ses interventions), pour
+// pouvoir les supprimer du bucket avant de perdre toute référence à eux.
+function collectVehicleStoragePaths(vehicleId){
+  var v = state.vehicles[vehicleId];
+  var paths = [];
+  (v && v.documents || []).forEach(function(doc){ if(doc.path) paths.push(doc.path); });
+  (state.entries[vehicleId] || []).forEach(function(e){
+    if(e.invoiceDoc && e.invoiceDoc.path) paths.push(e.invoiceDoc.path);
+    (e.documents || []).forEach(function(doc){ if(doc.path) paths.push(doc.path); });
+  });
+  return paths;
+}
+
 async function deleteVehicle(id){
   var v = state.vehicles[id];
   if(!v) return;
   var ok = await showConfirm('Supprimer "' + v.name + '" et tout son historique d\'entretien ? Cette action est définitive.', 'Supprimer');
   if(!ok) return;
+
+  // Nettoyage du bucket Storage (documents véhicule + factures) et des accès
+  // partagés, avant de perdre toute référence à ce véhicule dans `state`.
+  // Ne bloque pas la suppression en cas d'échec (le véhicule doit disparaître
+  // de toute façon) — les erreurs sont juste journalisées en console.
+  var storagePaths = collectVehicleStoragePaths(id);
+  try {
+    if(storagePaths.length) await sb.storage.from(DOCS_BUCKET).remove(storagePaths);
+  } catch(e){
+    console.error('Erreur suppression des documents du véhicule dans le bucket:', e);
+  }
+  try {
+    await sb.from('vehicle_shares').delete().eq('vehicle_id', id).eq('owner_id', currentUser.id);
+  } catch(e){
+    console.error('Erreur suppression des partages du véhicule:', e);
+  }
 
   logEvent(id, 'Véhicule "' + v.name + '" supprimé');
   state.order = state.order.filter(function(x){ return x !== id; });

@@ -369,6 +369,24 @@ function renderCostChart(byYearAll, yearsCount, accentColor){
   return { svg: svg, avg: avg, med: med };
 }
 
+// Formate un objet Date en "YYYY-MM-DD" à partir de ses composants LOCAUX
+// (jour/mois/année tels qu'affichés sur l'appareil de l'utilisateur), pour
+// pré-remplir un <input type="date">. À privilégier systématiquement sur
+// `date.toISOString().substring(0, 10)`, qui lit la date en UTC : selon
+// l'heure et le fuseau, ça peut afficher la veille ou le lendemain (ex : à
+// 0h30 en France l'hiver, toISOString() donne encore la date de la veille).
+function localDateInputValue(date){
+  var d = date || new Date();
+  var year = d.getFullYear();
+  var month = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
+}
+
+function todayLocalISO(){
+  return localDateInputValue(new Date());
+}
+
 function fmtDate(dStr){
   if(!dStr) return '—';
   var parts = dStr.split('-');

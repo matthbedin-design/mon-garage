@@ -498,7 +498,18 @@ async function loadState(){
     initDefaultState();
   }
 
-  // Sanity check
+  normalizeState();
+  render();
+}
+
+// Comble les champs manquants sur `state` avec des valeurs par défaut sûres.
+// À appeler après tout chargement d'un état venant de l'extérieur — chargement
+// cloud normal, mais aussi restauration d'une sauvegarde (restoreBackup) :
+// une sauvegarde archivée avant l'ajout d'une fonctionnalité (checklist,
+// sessions, interventions à prévoir...) peut ne pas contenir ces champs, et
+// le reste du code (render.js, checklist-sessions.js) suppose qu'ils
+// existent toujours.
+function normalizeState(){
   if(!state.types || !state.types.length) state.types = DEFAULT_TYPES.slice();
   if(!state.journal) state.journal = [];
   if(!state.order) state.order = [];
@@ -521,8 +532,6 @@ async function loadState(){
   if(!activeVehicleId){
     activeVehicleId = DASHBOARD_ID;
   }
-
-  render();
 }
 
 function initDefaultState(){

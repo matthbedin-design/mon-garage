@@ -373,7 +373,7 @@ function openSessionDetailModal(vehicleId, sessionId){
       '<button type="button" class="export-btn session-mark-done-btn" data-type="' + typeId + '">✅ Marquer réalisée</button>' +
       '<div class="session-done-form" id="doneForm-' + typeId + '" style="display:none; margin-top:10px;">' +
         '<div class="row2">' +
-          '<div class="field"><label>Date</label><input type="date" class="session-done-date" value="' + new Date().toISOString().substring(0, 10) + '"></div>' +
+          '<div class="field"><label>Date</label><input type="date" class="session-done-date" value="' + todayLocalISO() + '"></div>' +
           (isTrailer(v) ? '' : '<div class="field"><label>Kilométrage</label><input type="number" class="session-done-km" value="' + (v.mileage || 0) + '"></div>') +
         '</div>' +
         '<div class="row2">' +

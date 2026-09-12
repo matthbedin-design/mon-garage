@@ -61,7 +61,7 @@ function bindCtSectionEvents(){
         var dateInput = document.getElementById('f-date');
         var base = dateInput && dateInput.value ? new Date(dateInput.value) : new Date();
         base.setMonth(base.getMonth() + 2);
-        cvDeadlineInput.value = base.toISOString().substring(0, 10);
+        cvDeadlineInput.value = localDateInputValue(base);
       }
     };
   }
@@ -172,7 +172,7 @@ function openEntryModal(entryId){
 
   var modal = document.getElementById('modal');
   var title = entry ? 'Modifier l\'intervention' : 'Nouvelle intervention';
-  var dateVal = entry ? entry.date : new Date().toISOString().substring(0, 10);
+  var dateVal = entry ? entry.date : todayLocalISO();
   var kmVal = entry ? entry.km : v.mileage;
   var notesVal = entry ? (entry.notes || '') : '';
 

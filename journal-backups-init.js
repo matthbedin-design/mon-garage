@@ -102,6 +102,7 @@ async function restoreBackup(historyId){
     }
 
     state = res.data.state;
+    normalizeState(); // comble les champs absents sur une sauvegarde antérieure au schéma actuel
     var saved = await persist();
     if(saved){
       closeModal();

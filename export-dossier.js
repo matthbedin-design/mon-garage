@@ -56,7 +56,7 @@ function exportHistoryCSV(vehicleId){
   var a = document.createElement('a');
   a.href = url;
   var safeName = (v.name || 'vehicule').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  a.download = 'historique-' + safeName + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = 'historique-' + safeName + '-' + todayLocalISO() + '.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -413,7 +413,7 @@ function openMaintenanceSheetModal(vehicleId){
     if(!state.sessions[vehicleId]) state.sessions[vehicleId] = [];
     var session = {
       id: genId('sess'),
-      date: new Date().toISOString().substring(0, 10),
+      date: todayLocalISO(),
       status: 'planned',
       plannedTypeIds: selectedTypeIds,
       checklistItemIds: selectedChecklistIds,
