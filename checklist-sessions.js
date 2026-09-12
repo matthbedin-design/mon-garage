@@ -320,9 +320,10 @@ function openSessionDetailModal(vehicleId, sessionId){
     var sortedItems = grp.items.slice().sort(function(a, b){
       var ra = session.checklistResults.filter(function(r){ return r.itemId === a.id; })[0];
       var rb = session.checklistResults.filter(function(r){ return r.itemId === b.id; })[0];
-      var rank = { revoir: 0, undefined: 1, ok: 2 };
-      var rankA = rank[ra ? ra.status : undefined];
-      var rankB = rank[rb ? rb.status : undefined];
+      // 'none' : aucun résultat enregistré pour ce point (ni "revoir" ni "ok").
+      var rank = { revoir: 0, none: 1, ok: 2 };
+      var rankA = rank[(ra && ra.status) || 'none'];
+      var rankB = rank[(rb && rb.status) || 'none'];
       return rankA - rankB;
     });
     return { theme: grp.theme, items: sortedItems };
