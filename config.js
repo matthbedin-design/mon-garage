@@ -70,7 +70,7 @@ var sb = null;
 var cloudReady = false;
 var currentUser = null;
 var realtimeChannel = null;
-var isWriting = false; // true pendant/juste après une écriture locale, pour ignorer l'écho realtime correspondant
+var pendingEchoes = {}; // { 'table:id': expiration Date.now() } — écritures locales en attente de leur écho realtime, voir markPendingEcho()/consumePendingEcho() dans data-sync-calc.js
 var lastKnownUpdatedAt = null; // updated_at de la dernière version connue côté serveur (jeton de concurrence optimiste)
 var convertingPlannedIntervention = null; // { vehicleId, id } de l'intervention à prévoir en cours de conversion vers une intervention réalisée (le temps que le formulaire soit enregistré ou annulé)
 

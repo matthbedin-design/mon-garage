@@ -250,16 +250,53 @@ function refreshLastSynced(){
   lastSynced = snap;
 }
 
+// Écho de nos propres écritures : quand applySyncOps() envoie une ligne à
+// Supabase, on l'enregistre ici (clé "table:id") avec une expiration courte.
+// Quand l'événement realtime correspondant à cette même ligne revient, on le
+// reconnaît comme notre propre écho et on l'ignore — sans bloquer, comme le
+// faisait l'ancien flag global `isWriting`, les événements sur les *autres*
+// lignes pendant ce temps, ni un deuxième événement ultérieur sur cette même
+// ligne (qui, lui, correspond à un vrai changement externe et déclenche
+// normalement un rechargement).
+var PENDING_ECHO_TTL_MS = 8000;
+
+function markPendingEcho(table, id){
+  pendingEchoes[table + ':' + id] = Date.now() + PENDING_ECHO_TTL_MS;
+  sweepExpiredEchoes();
+}
+
+// Purge occasionnelle des attentes jamais consommées (écriture qui échoue,
+// événement jamais reçu...) pour ne pas accumuler indéfiniment de clés sur
+// une session très longue. Coût négligeable : appelée uniquement lors d'un
+// nouvel enregistrement, sur un objet qui reste petit en pratique.
+function sweepExpiredEchoes(){
+  var now = Date.now();
+  Object.keys(pendingEchoes).forEach(function(key){
+    if(pendingEchoes[key] < now) delete pendingEchoes[key];
+  });
+}
+
+// Renvoie true si cet événement correspond à une écriture locale récente
+// (et "consomme" l'attente : un futur événement sur la même ligne ne sera
+// plus jamais traité comme un écho, y compris s'il arrive avant l'expiration).
+function consumePendingEcho(table, id){
+  var key = table + ':' + id;
+  var expiresAt = pendingEchoes[key];
+  if(expiresAt === undefined) return false;
+  delete pendingEchoes[key];
+  return expiresAt >= Date.now();
+}
+
 async function applySyncOps(ops){
   var tasks = [];
-  if(ops.vehiclesUpsert.length) tasks.push(sb.from('vehicles').upsert(ops.vehiclesUpsert));
-  if(ops.vehiclesDelete.length) tasks.push(sb.from('vehicles').delete().in('id', ops.vehiclesDelete));
-  if(ops.entriesUpsert.length) tasks.push(sb.from('entries').upsert(ops.entriesUpsert));
-  if(ops.entriesDelete.length) tasks.push(sb.from('entries').delete().in('id', ops.entriesDelete));
-  if(ops.sessionsUpsert.length) tasks.push(sb.from('sessions').upsert(ops.sessionsUpsert));
-  if(ops.sessionsDelete.length) tasks.push(sb.from('sessions').delete().in('id', ops.sessionsDelete));
-  if(ops.plannedUpsert.length) tasks.push(sb.from('planned_interventions').upsert(ops.plannedUpsert));
-  if(ops.plannedDelete.length) tasks.push(sb.from('planned_interventions').delete().in('id', ops.plannedDelete));
+  if(ops.vehiclesUpsert.length){ ops.vehiclesUpsert.forEach(function(r){ markPendingEcho('vehicles', r.id); }); tasks.push(sb.from('vehicles').upsert(ops.vehiclesUpsert)); }
+  if(ops.vehiclesDelete.length){ ops.vehiclesDelete.forEach(function(id){ markPendingEcho('vehicles', id); }); tasks.push(sb.from('vehicles').delete().in('id', ops.vehiclesDelete)); }
+  if(ops.entriesUpsert.length){ ops.entriesUpsert.forEach(function(r){ markPendingEcho('entries', r.id); }); tasks.push(sb.from('entries').upsert(ops.entriesUpsert)); }
+  if(ops.entriesDelete.length){ ops.entriesDelete.forEach(function(id){ markPendingEcho('entries', id); }); tasks.push(sb.from('entries').delete().in('id', ops.entriesDelete)); }
+  if(ops.sessionsUpsert.length){ ops.sessionsUpsert.forEach(function(r){ markPendingEcho('sessions', r.id); }); tasks.push(sb.from('sessions').upsert(ops.sessionsUpsert)); }
+  if(ops.sessionsDelete.length){ ops.sessionsDelete.forEach(function(id){ markPendingEcho('sessions', id); }); tasks.push(sb.from('sessions').delete().in('id', ops.sessionsDelete)); }
+  if(ops.plannedUpsert.length){ ops.plannedUpsert.forEach(function(r){ markPendingEcho('planned_interventions', r.id); }); tasks.push(sb.from('planned_interventions').upsert(ops.plannedUpsert)); }
+  if(ops.plannedDelete.length){ ops.plannedDelete.forEach(function(id){ markPendingEcho('planned_interventions', id); }); tasks.push(sb.from('planned_interventions').delete().in('id', ops.plannedDelete)); }
 
   // Réglages restants (journal, types, checklist) : toujours réécrits en
   // entier, volume négligeable et jamais partagés entre utilisateurs.
@@ -284,7 +321,6 @@ async function persist(){
   }
 
   setSyncStatus('saving');
-  isWriting = true;
   try {
     var ops = buildSyncOps();
     await applySyncOps(ops);
@@ -325,10 +361,6 @@ async function persist(){
     console.error('Exception sauvegarde cloud:', e);
     setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
     return false;
-  } finally {
-    // Petit délai avant de rebaisser le flag : laisse le temps à l'écho realtime
-    // de notre propre écriture d'arriver et d'être ignoré.
-    setTimeout(function(){ isWriting = false; }, 2000);
   }
 }
 
@@ -612,6 +644,23 @@ async function signInWithPassword(){
 // lignes visibles est assuré par les policies RLS de chaque table (un
 // utilisateur ne reçoit que les événements sur ses propres véhicules, et à
 // l'étape 2, ceux qui lui sont partagés).
+//
+// Chaque événement est d'abord comparé à `pendingEchoes` (voir plus haut) :
+// s'il correspond à une écriture qu'on vient d'envoyer nous-mêmes sur cette
+// ligne précise, on l'ignore ; sinon, c'est un changement externe réel et on
+// recharge. Contrairement à l'ancien flag global `isWriting`, ça ne bloque
+// jamais les changements sur d'autres lignes pendant qu'on écrit, et ça ne
+// rate jamais un deuxième changement sur la même ligne survenant juste après
+// notre propre écriture.
+function makeRealtimeHandler(table, reload){
+  return function(payload){
+    var row = (payload.new && Object.keys(payload.new).length) ? payload.new : payload.old;
+    var id = row && row.id;
+    if(id && consumePendingEcho(table, id)) return;
+    reload();
+  };
+}
+
 function subscribeRealtime(){
   if(!cloudReady || !currentUser || !sb) return;
 
@@ -621,17 +670,14 @@ function subscribeRealtime(){
     realtimeChannel = null;
   }
 
-  var reload = debounce(function(){
-    if(isWriting) return; // ignore l'écho de notre propre écriture en cours
-    loadState();
-  }, 400);
+  var reload = debounce(function(){ loadState(); }, 400);
 
   realtimeChannel = sb
     .channel('carnet_changes_' + currentUser.id)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, reload)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, reload)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, reload)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'planned_interventions' }, reload)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, makeRealtimeHandler('vehicles', reload))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, makeRealtimeHandler('entries', reload))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, makeRealtimeHandler('sessions', reload))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'planned_interventions' }, makeRealtimeHandler('planned_interventions', reload))
     .subscribe();
 }
 
