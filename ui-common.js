@@ -59,9 +59,46 @@ function showAlert(message){
 // permettre d'enchaîner `if(!(await warnIfSaveFailed(saved))) return;`.
 async function warnIfSaveFailed(saved){
   if(!saved){
-    await showAlert('La sauvegarde a échoué — vérifiez votre connexion. Cette modification n\'a peut-être pas été enregistrée sur le serveur, réessayez.');
+    var detail = lastSyncErrorMessage || 'Vérifiez votre connexion.';
+    await showAlert('La sauvegarde a échoué. ' + detail + ' Cette modification n\'a peut-être pas été enregistrée sur le serveur.');
   }
   return saved;
+}
+
+// Traduit une erreur Supabase/réseau en message clair et actionnable, plutôt
+// que le même message générique ("vérifiez la connexion") quelle que soit la
+// cause réelle — une session expirée ou un accès refusé ne se résolvent pas
+// en vérifiant sa connexion internet, et le dire clairement évite à
+// l'utilisateur de tourner en rond sur la mauvaise piste.
+function describeSyncError(e){
+  var msg = (e && e.message) || '';
+  var code = e && e.code;
+
+  if(/failed to fetch|networkerror|load failed|network request failed/i.test(msg)){
+    return 'Impossible de joindre le serveur — vérifiez votre connexion internet.';
+  }
+  if(code === 'PGRST301' || /jwt expired|invalid jwt/i.test(msg)){
+    return 'Votre session a expiré — déconnectez-vous puis reconnectez-vous.';
+  }
+  if(code === '42501' || /row-level security|permission denied/i.test(msg)){
+    return 'Accès refusé par le serveur pour cette donnée. Si ça persiste, contactez le support.';
+  }
+  if(msg){
+    return 'Erreur inattendue (' + msg + '). Réessayez dans un instant.';
+  }
+  return 'Une erreur inattendue est survenue. Réessayez dans un instant.';
+}
+
+// Même diagnostic que describeSyncError(), condensé pour le badge de statut
+// dans l'en-tête (peu de place) — le message complet et actionnable reste
+// affiché via warnIfSaveFailed() quand l'espace le permet.
+function shortSyncErrorLabel(e){
+  var msg = (e && e.message) || '';
+  var code = e && e.code;
+  if(/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) return 'Hors ligne';
+  if(code === 'PGRST301' || /jwt expired|invalid jwt/i.test(msg)) return 'Session expirée';
+  if(code === '42501' || /row-level security|permission denied/i.test(msg)) return 'Accès refusé';
+  return 'Erreur de synchronisation';
 }
 
 function escapeHtml(str){
@@ -190,7 +227,7 @@ async function openStorageDoc(path){
     window.open(res.data.signedUrl, '_blank');
   } catch(e){
     console.error(e);
-    await showAlert('Impossible d\'ouvrir ce document pour le moment.');
+    await showAlert('Impossible d\'ouvrir ce document pour le moment. ' + describeSyncError(e));
   }
 }
 

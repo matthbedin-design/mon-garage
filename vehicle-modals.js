@@ -270,7 +270,7 @@ function openShareVehicleModal(vehicleId){
     var res = await sb.from('vehicle_shares').select('id, invited_email, role, status')
       .eq('vehicle_id', vehicleId).eq('owner_id', currentUser.id);
     if(res.error){
-      area.textContent = 'Impossible de charger la liste des partages.';
+      area.textContent = describeSyncError(res.error);
       return;
     }
     var rows = res.data || [];

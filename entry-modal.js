@@ -387,7 +387,7 @@ async function saveEntry(){
     }
   } catch(e){
     console.error('Erreur upload facture:', e);
-    await showAlert('Impossible de joindre la facture, l\'intervention sera quand même enregistrée.');
+    await showAlert('Impossible de joindre la facture (' + describeSyncError(e) + '), l\'intervention sera quand même enregistrée.');
   }
 
   if(editingEntryId){

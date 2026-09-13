@@ -49,7 +49,7 @@ async function openBackupsModal(){
 
     if(res.error){
       console.error('Erreur chargement des sauvegardes:', res.error);
-      document.getElementById('backupsLoading').textContent = 'Impossible de charger les sauvegardes.';
+      document.getElementById('backupsLoading').textContent = describeSyncError(res.error);
       return;
     }
 
@@ -82,7 +82,7 @@ async function openBackupsModal(){
   } catch(e){
     console.error('Exception chargement des sauvegardes:', e);
     var el = document.getElementById('backupsLoading');
-    if(el) el.textContent = 'Impossible de charger les sauvegardes.';
+    if(el) el.textContent = describeSyncError(e);
   }
 }
 
@@ -97,7 +97,7 @@ async function restoreBackup(historyId){
     var res = await sb.from('user_data_history').select('state').eq('id', historyId).eq('user_id', currentUser.id).single();
     if(res.error || !res.data){
       console.error('Erreur lecture de la sauvegarde:', res.error);
-      await showAlert('Impossible de récupérer cette sauvegarde.');
+      await showAlert(res.error ? describeSyncError(res.error) : 'Cette sauvegarde est introuvable — elle a peut-être expiré ou déjà été purgée.');
       return;
     }
 
@@ -109,11 +109,11 @@ async function restoreBackup(historyId){
       renderContent();
       await showAlert('Version restaurée avec succès.');
     } else {
-      await showAlert('La restauration a échoué pendant la sauvegarde. Réessayez.');
+      await showAlert('La restauration a échoué pendant la sauvegarde. ' + (lastSyncErrorMessage || 'Réessayez.'));
     }
   } catch(e){
     console.error('Exception restauration de sauvegarde:', e);
-    await showAlert('Impossible de restaurer cette version.');
+    await showAlert(describeSyncError(e));
   }
 }
 

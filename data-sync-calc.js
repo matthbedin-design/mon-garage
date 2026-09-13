@@ -356,10 +356,12 @@ async function persist(){
     }
 
     setSyncStatus('synced');
+    lastSyncErrorMessage = null;
     return true;
   } catch(e) {
     console.error('Exception sauvegarde cloud:', e);
-    setSyncStatus('error', 'Sauvegarde échouée — vérifiez la connexion');
+    lastSyncErrorMessage = describeSyncError(e);
+    setSyncStatus('error', shortSyncErrorLabel(e));
     return false;
   }
 }
@@ -524,9 +526,11 @@ async function loadState(){
 
     subscribeRealtime();
     setSyncStatus('synced');
+    lastSyncErrorMessage = null;
   } catch(e) {
     console.error('Erreur chargement cloud:', e);
-    setSyncStatus('error', 'Chargement impossible — vérifiez la connexion');
+    lastSyncErrorMessage = describeSyncError(e);
+    setSyncStatus('error', shortSyncErrorLabel(e));
     initDefaultState();
   }
 

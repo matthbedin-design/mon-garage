@@ -712,7 +712,7 @@ function renderContent(){
         renderContent();
       } catch(err) {
         console.error(err);
-        await showAlert('Impossible d\'ajouter ce document.');
+        await showAlert('Impossible d\'ajouter ce document. ' + describeSyncError(err));
       } finally {
         addDocBtn.disabled = false;
         addDocBtn.textContent = '+';
