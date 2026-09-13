@@ -259,7 +259,7 @@ function renderContent(){
     html += '</div>';
   });
 
-  html += '<button class="doc-add-btn" id="addDocBtn" title="Ajouter un document">+</button>';
+  html += '<button class="doc-add-btn" id="addDocBtn" title="Ajouter un document" aria-label="Ajouter un document">+</button>';
   html += '<input type="file" id="docFileInput" style="display:none;" accept="image/*,application/pdf">';
   html += '</div></div>';
   html += '</div>'; // Fin vehicle-header
@@ -402,9 +402,9 @@ function renderContent(){
       var chart = renderCostChart(costStats.byYear, yearsCount, v.color || 'var(--yellow)');
 
       html += '<div class="cost-chart-controls">';
-      html += '<button type="button" class="cost-chart-btn" id="costChartMinus" ' + (yearsCount <= 2 ? 'disabled' : '') + '>−</button>';
+      html += '<button type="button" class="cost-chart-btn" id="costChartMinus" aria-label="Afficher moins d\'années dans le graphique" ' + (yearsCount <= 2 ? 'disabled' : '') + '>−</button>';
       html += '<span>' + yearsCount + ' dernière' + (yearsCount > 1 ? 's' : '') + ' année' + (yearsCount > 1 ? 's' : '') + '</span>';
-      html += '<button type="button" class="cost-chart-btn" id="costChartPlus" ' + (yearsCount >= costStats.byYear.length ? 'disabled' : '') + '>+</button>';
+      html += '<button type="button" class="cost-chart-btn" id="costChartPlus" aria-label="Afficher plus d\'années dans le graphique" ' + (yearsCount >= costStats.byYear.length ? 'disabled' : '') + '>+</button>';
       html += '</div>';
       html += '<div class="cost-chart-wrap">' + chart.svg + '</div>';
       if(chart.avg != null){
@@ -447,7 +447,7 @@ function renderContent(){
     html += '<input type="date" id="histFilterDateFrom" title="Du" value="' + historyFilters.dateFrom + '">';
     html += '<input type="date" id="histFilterDateTo" title="Au" value="' + historyFilters.dateTo + '">';
     html += '<label class="hist-filter-check"><input type="checkbox" id="histFilterInvoice"' + (historyFilters.invoiceOnly ? ' checked' : '') + '> 📎 Avec facture</label>';
-    if(hasActiveHistoryFilters()) html += '<button type="button" class="export-btn" id="histFilterReset">✕ Réinitialiser</button>';
+    if(hasActiveHistoryFilters()) html += '<button type="button" class="export-btn" id="histFilterReset" aria-label="Réinitialiser les filtres de l\'historique">✕ Réinitialiser</button>';
     html += '</div>';
   }
 
