@@ -71,11 +71,18 @@ Aucun bundler : les fichiers JS sont chargés dans l'ordre via `<script>` dans
 - `export-dossier.js` — export PDF (impression), CSV, et par e-mail.
 - `journal-backups-init.js` — journal d'activité, sauvegardes/restauration,
   compte, câblage des événements globaux et démarrage de l'app.
+- `sw.js` — service worker minimal : met en cache le squelette de l'app
+  (HTML/CSS/JS/icônes) pour qu'elle puisse au moins s'ouvrir sans réseau ;
+  ne met jamais en cache les appels Supabase. **À maintenir manuellement** :
+  toute nouvelle page/fichier statique ajouté doit être ajouté à la liste
+  `PRECACHE_URLS` en haut du fichier, sinon il ne sera pas mis en cache.
 
 ## Limites connues
 
-- Pas de mode hors-ligne : l'app nécessite une connexion à Supabase pour
-  fonctionner (aucune donnée de secours locale si le réseau est coupé).
+- Mode hors-ligne minimal seulement : un service worker (`sw.js`) permet à
+  l'app de s'ouvrir sans réseau (squelette HTML/CSS/JS en cache), mais les
+  données restent entièrement dépendantes de Supabase — hors ligne, l'app
+  s'affiche mais ne peut ni charger ni modifier les véhicules/interventions.
 - Concurrence "dernier écrivain gagne" sur les tables normalisées lors
   d'écritures quasi simultanées depuis deux appareils (le jeton de
   concurrence optimiste ne protège que le miroir `user_data`) — acceptable

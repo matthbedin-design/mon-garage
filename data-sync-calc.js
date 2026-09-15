@@ -537,11 +537,18 @@ async function loadState(){
     subscribeRealtime();
     setSyncStatus('synced');
     lastSyncErrorMessage = null;
+    hasLoadedStateOnce = true;
   } catch(e) {
     console.error('Erreur chargement cloud:', e);
     lastSyncErrorMessage = describeSyncError(e);
     setSyncStatus('error', shortSyncErrorLabel(e));
-    initDefaultState();
+    // Ne réinitialise l'état à vide que si on n'a JAMAIS réussi à charger les
+    // vraies données : un rechargement raté après coup (ex : déclenché par
+    // Realtime suite à un blip réseau) ne doit pas effacer ce qui est déjà
+    // affiché à l'écran — l'utilisateur verrait ses véhicules disparaître
+    // comme si les données avaient été perdues, alors qu'il s'agit juste
+    // d'un échec de rechargement.
+    if(!hasLoadedStateOnce) initDefaultState();
   }
 
   normalizeState();

@@ -72,6 +72,7 @@ var currentUser = null;
 var realtimeChannel = null;
 var pendingEchoes = {}; // { 'table:id': expiration Date.now() } — écritures locales en attente de leur écho realtime, voir markPendingEcho()/consumePendingEcho() dans data-sync-calc.js
 var lastSyncErrorMessage = null; // dernier message d'erreur détaillé (voir describeSyncError() dans ui-common.js), affiché par warnIfSaveFailed() en cas d'échec de sauvegarde
+var hasLoadedStateOnce = false; // passe à true après le tout premier loadState() réussi — évite qu'un rechargement raté (ex: déclenché par Realtime) n'efface les données déjà affichées
 var lastKnownUpdatedAt = null; // updated_at de la dernière version connue côté serveur (jeton de concurrence optimiste)
 var convertingPlannedIntervention = null; // { vehicleId, id } de l'intervention à prévoir en cours de conversion vers une intervention réalisée (le temps que le formulaire soit enregistré ou annulé)
 
