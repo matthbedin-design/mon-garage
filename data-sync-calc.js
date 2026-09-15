@@ -309,8 +309,18 @@ async function applySyncOps(ops){
   }));
 
   var results = await Promise.all(tasks);
-  var firstError = results.map(function(r){ return r.error; }).filter(Boolean)[0];
-  if(firstError) throw firstError;
+  var errors = results.map(function(r){ return r.error; }).filter(Boolean);
+  if(errors.length){
+    // On journalise CHAQUE échec (avant, seule la première erreur du lot était
+    // visible, les autres disparaissaient silencieusement) et on les combine
+    // dans une seule erreur : describeSyncError() lira son .message pour le
+    // cas générique, et son .code (celui de la première erreur) pour détecter
+    // les cas réseau/session expirée/RLS déjà gérés.
+    errors.forEach(function(err){ console.error('Erreur synchronisation (une opération du lot) :', err); });
+    var combined = new Error(errors.map(function(e){ return e.message; }).join(' | '));
+    combined.code = errors[0].code;
+    throw combined;
+  }
 }
 
 async function persist(){
