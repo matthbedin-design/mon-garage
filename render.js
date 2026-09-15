@@ -171,6 +171,41 @@ function renderDashboardContent(content){
   });
   html += '</div></section>';
 
+  // Statistiques globales — vue macro sur tous les véhicules
+  var globalStats = computeGlobalStats();
+  if(globalStats.hasAny){
+    html += '<section>';
+    html += '<h2 class="section-title">Statistiques globales</h2>';
+    html += '<div class="cost-stats-grid">';
+    html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(globalStats.total) + '</div><div class="cost-stat-label">Total dépensé</div></div>';
+    html += '<div class="cost-stat"><div class="cost-stat-value">' + fmtEuro(globalStats.currentYear) + '</div><div class="cost-stat-label">Cette année (' + new Date().getFullYear() + ')</div></div>';
+    html += '</div>';
+
+    if(globalStats.byVehicle.length > 1){
+      html += '<h3 class="section-subtitle" style="margin-top:14px;">Par véhicule</h3>';
+      var maxVeh = globalStats.byVehicle[0].total || 1;
+      globalStats.byVehicle.forEach(function(item){
+        var pct = Math.round((item.total / maxVeh) * 100);
+        html += '<div class="stat-bar-row"><div class="stat-bar-fill" style="width:' + pct + '%; background:' + (item.color || 'var(--yellow)') + ';"></div>' +
+          '<span class="stat-bar-label">' + escapeHtml(item.name) + '</span>' +
+          '<span class="stat-bar-value">' + fmtEuro(item.total) + '</span></div>';
+      });
+    }
+
+    if(globalStats.byCategory.length > 1){
+      html += '<h3 class="section-subtitle" style="margin-top:14px;">Par catégorie</h3>';
+      var maxCat = globalStats.byCategory[0].total || 1;
+      globalStats.byCategory.forEach(function(item){
+        var pct = Math.round((item.total / maxCat) * 100);
+        html += '<div class="stat-bar-row"><div class="stat-bar-fill" style="width:' + pct + '%;"></div>' +
+          '<span class="stat-bar-label">' + escapeHtml(item.label) + '</span>' +
+          '<span class="stat-bar-value">' + fmtEuro(item.total) + '</span></div>';
+      });
+    }
+
+    html += '</section>';
+  }
+
   content.innerHTML = html;
 
   Array.prototype.forEach.call(content.querySelectorAll('.dash-card'), function(card){

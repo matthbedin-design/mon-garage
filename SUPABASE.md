@@ -35,7 +35,7 @@ restriction uniquement côté client sans l'ajouter aussi en RLS.
 | `sessions` | Une fiche de vérification (checklist) | `id`, `vehicle_id`, `data` (jsonb), `status`, `created_by` |
 | `planned_interventions` | Une intervention "à prévoir" | `id`, `vehicle_id`, `label`, `notes`, `created_at`, `source_session_id`, `source_item_id`, `created_by` |
 | `user_settings` | Réglages non partagés par utilisateur | `user_id` (PK), `journal` (jsonb), ~~`types` (jsonb)~~, ~~`checklist_items` (jsonb)~~ (colonnes mortes depuis le 14/09/2026, voir note plus bas), `updated_at` |
-| `vehicle_shares` | Partage d'un véhicule avec un autre compte | `id`, `vehicle_id`, `owner_id`, `invited_email`, `role` (`viewer`/`contributor`/`editor`), `shared_with_user_id`, `status` (`pending`/`active`) |
+| `vehicle_shares` | Partage d'un véhicule avec un autre compte | `id`, `vehicle_id`, `owner_id`, `invited_email`, `role` (`viewer`/`contributor`/`editor`), `shared_with_user_id`, `status` (`pending`/`active`), `expires_at` (timestamptz, optionnel — ajouté le 15/09/2026, voir journal) |
 | `user_data` | Miroir JSON complet de l'état (source des sauvegardes/historique ; n'est plus utilisé pour charger l'app, best-effort) | `user_id` (PK), `state` (jsonb), `updated_at` |
 | `user_data_history` | Archive automatique (trigger sur `user_data`), purgée après 90 jours | `id`, `user_id`, `state` (jsonb), `updated_at`, `archived_at` |
 | `shared_settings` | Table **partagée entre tous les comptes** (pas de `user_id`) : palette de types d'intervention et de checklist. Une seule ligne, `id = 'default'`. Ajoutée le 14/09/2026 — voir journal. | `id` (PK, toujours `'default'`), `types` (jsonb), `checklist_items` (jsonb), `updated_at` |
@@ -100,6 +100,7 @@ as $$
   ) or exists (
     select 1 from vehicle_shares
     where vehicle_id = v_id and status = 'active' and shared_with_user_id = auth.uid()
+      and (expires_at is null or expires_at > now())
   );
 $$;
 
@@ -115,6 +116,7 @@ as $$
     select 1 from vehicle_shares
     where vehicle_id = v_id and status = 'active'
       and shared_with_user_id = auth.uid() and role in ('editor','contributor')
+      and (expires_at is null or expires_at > now())
   );
 $$;
 
@@ -130,19 +132,23 @@ as $$
     select 1 from vehicle_shares
     where vehicle_id = v_id and status = 'active'
       and shared_with_user_id = auth.uid() and role = 'editor'
+      and (expires_at is null or expires_at > now())
   );
 $$;
 ```
 
 `search_path` fixé explicitement sur les trois (durcissement recommandé par
 le Database Linter de Supabase pour toute fonction `SECURITY DEFINER`).
+Le filtre `expires_at is null or expires_at > now()` (ajouté le 15/09/2026)
+fait qu'un partage expiré perd l'accès **immédiatement**, sans job de purge —
+voir "Partage temporaire" plus bas.
 
 ## Triggers de sécurité
 
 **`prevent_share_tampering`** sur `vehicle_shares` — empêche qu'un utilisateur
 qui s'auto-attribue une invitation en attente (policy `shares_self_claim`)
-puisse au passage modifier `role`, `vehicle_id`, `owner_id` ou
-`invited_email` : la policy RLS ne vérifie que l'état final de
+puisse au passage modifier `role`, `vehicle_id`, `owner_id`, `invited_email`
+ou `expires_at` : la policy RLS ne vérifie que l'état final de
 `shared_with_user_id`/`status`, pas que ces autres colonnes sont restées
 inchangées.
 
@@ -156,7 +162,8 @@ begin
   if new.role is distinct from old.role
      or new.vehicle_id is distinct from old.vehicle_id
      or new.owner_id is distinct from old.owner_id
-     or new.invited_email is distinct from old.invited_email then
+     or new.invited_email is distinct from old.invited_email
+     or new.expires_at is distinct from old.expires_at then
     raise exception 'Modification non autorisée sur ce partage.';
   end if;
   return new;
@@ -244,6 +251,22 @@ clair dans sa définition — à migrer vers **Supabase Vault** dès que possibl
 reproduise pas à la prochaine modification de ce job.
 
 ## Journal des vérifications/modifications
+
+- **15/09/2026 — Nouvelles fonctionnalités : statistiques globales + partage
+  temporaire.**
+  - *Statistiques globales* (`computeGlobalStats()` dans `ui-common.js`,
+    affichées sur le tableau de bord dans `render.js`) : total dépensé,
+    dépenses de l'année en cours, répartition par véhicule et par catégorie,
+    tous véhicules confondus. Purement front-end, aucun changement Supabase.
+  - *Partage temporaire* : ajout de `vehicle_shares.expires_at`
+    (`timestamptz`, optionnel). L'expiration est appliquée **directement
+    dans les 3 fonctions RLS** (`has_vehicle_access`, `has_contribute_access`,
+    `can_edit_vehicle`) plutôt que via un job `pg_cron` qui repasserait
+    `status` à `expired` une fois par jour — ce choix donne une coupure
+    d'accès immédiate et exacte à la seconde près, sans latence ni tâche
+    planifiée supplémentaire. Le trigger `prevent_share_tampering` a été
+    étendu pour protéger aussi `expires_at` contre une modification par la
+    personne invitée elle-même lors de l'auto-attribution de son invitation.
 
 - **14/09/2026 — Bug trouvé en testant Realtime : les types d'intervention et
   la checklist n'étaient pas partagés entre comptes.** En testant le partage

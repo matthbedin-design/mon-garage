@@ -256,6 +256,9 @@ function openShareVehicleModal(vehicleId){
       '<option value="contributor">Contributeur (peut ajouter des interventions)</option>' +
       '<option value="editor">Édition complète</option>' +
     '</select></div>' +
+    '<div class="field"><label>Expiration (optionnel)</label><input type="date" id="shareExpires">' +
+      '<div class="field-hint">Laisser vide pour un accès permanent — utile pour un partage temporaire (garage, contrôle technique...), l\'accès se coupe automatiquement à minuit ce jour-là.</div>' +
+    '</div>' +
     '<button class="btn btn-primary" id="shareInviteBtn" style="width:100%;">Inviter</button>' +
     '<div id="shareInviteStatus" style="text-align:center; font-size:12.5px; margin-top:8px; min-height:16px;"></div>' +
     '<div class="modal-actions" style="margin-top:16px;"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">Fermer</button></div>';
@@ -267,7 +270,7 @@ function openShareVehicleModal(vehicleId){
   async function refreshShareList(){
     var area = document.getElementById('shareListArea');
     if(!area) return;
-    var res = await sb.from('vehicle_shares').select('id, invited_email, role, status')
+    var res = await sb.from('vehicle_shares').select('id, invited_email, role, status, expires_at')
       .eq('vehicle_id', vehicleId).eq('owner_id', currentUser.id);
     if(res.error){
       area.textContent = describeSyncError(res.error);
@@ -283,9 +286,13 @@ function openShareVehicleModal(vehicleId){
     area.innerHTML = rows.map(function(r){
       var roleLabel = (r.role === 'editor') ? 'Édition complète' : (r.role === 'contributor' ? 'Contributeur' : 'Lecture seule');
       var statusLabel = (r.status === 'pending') ? ' (en attente de connexion)' : '';
+      var expired = r.expires_at && new Date(r.expires_at) <= new Date();
+      var expiryLabel = r.expires_at
+        ? (expired ? ' · <span style="color:var(--red)">expiré le ' + fmtDate(r.expires_at.substring(0,10)) + '</span>' : ' · jusqu\'au ' + fmtDate(r.expires_at.substring(0,10)))
+        : '';
       return '<div class="journal-row">' +
         '<div class="journal-meta"><span class="journal-tag" style="background:' + (v.color || '#6B6E70') + '">' + roleLabel + '</span></div>' +
-        '<div class="journal-msg">' + escapeHtml(r.invited_email || '') + statusLabel + '</div>' +
+        '<div class="journal-msg">' + escapeHtml(r.invited_email || '') + statusLabel + expiryLabel + '</div>' +
         '<button class="btn btn-ghost" data-revoke="' + r.id + '" style="margin-top:6px;">Révoquer l\'accès</button>' +
         '</div>';
     }).join('');
@@ -320,13 +327,21 @@ function openShareVehicleModal(vehicleId){
       var result = await resp.json();
       var foundUserId = result && result.userId ? result.userId : null;
 
+      var expiresInput = document.getElementById('shareExpires').value; // "" ou "YYYY-MM-DD"
+      // Fin de journée LOCALE (pas UTC) pour que l'accès reste valide toute la
+      // journée choisie, y compris pour un fuseau en avance sur UTC comme la
+      // France — voir localDateInputValue()/todayLocalISO() dans ui-common.js
+      // pour le même principe appliqué ailleurs dans l'app.
+      var expiresAt = expiresInput ? new Date(expiresInput + 'T23:59:59').toISOString() : null;
+
       var insertRow = {
         vehicle_id: vehicleId,
         owner_id: currentUser.id,
         invited_email: email,
         role: role,
         shared_with_user_id: foundUserId,
-        status: foundUserId ? 'active' : 'pending'
+        status: foundUserId ? 'active' : 'pending',
+        expires_at: expiresAt
       };
       var ins = await sb.from('vehicle_shares').insert(insertRow);
       if(ins.error){
@@ -340,6 +355,7 @@ function openShareVehicleModal(vehicleId){
         ? '✓ Accès accordé immédiatement (compte existant).'
         : '✓ Invitation enregistrée — l\'accès s\'activera à sa prochaine connexion.';
       document.getElementById('shareEmailInput').value = '';
+      document.getElementById('shareExpires').value = '';
       var roleLogLabel = (role === 'editor') ? 'édition' : (role === 'contributor' ? 'contributeur' : 'lecture seule');
       logEvent(vehicleId, 'Véhicule partagé avec ' + email + ' (' + roleLogLabel + ')');
       await warnIfSaveFailed(await persist());

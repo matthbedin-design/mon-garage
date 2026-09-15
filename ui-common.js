@@ -369,6 +369,59 @@ function computeCostStats(entries){
   return { hasAny: hasAny, total: total, perKm: perKm, currentYear: currentYear, byYear: byYear };
 }
 
+// Statistiques agrégées sur TOUS les véhicules — vue macro pour le tableau de
+// bord, à la différence de computeCostStats() qui est par véhicule. Réutilise
+// computeCostStats() véhicule par véhicule pour hériter de sa déduplication
+// des factures partagées (batchId) sur le total et le détail par année.
+function computeGlobalStats(){
+  var total = 0;
+  var currentYear = 0;
+  var byYearMap = {};
+  var byCategoryMap = {};
+  var byVehicle = [];
+
+  state.order.forEach(function(vehicleId){
+    var v = state.vehicles[vehicleId];
+    if(!v) return;
+    var entries = state.entries[vehicleId] || [];
+    var stats = computeCostStats(entries);
+    if(!stats.hasAny) return;
+
+    total += stats.total;
+    if(stats.currentYear != null) currentYear += stats.currentYear;
+    stats.byYear.forEach(function(y){
+      byYearMap[y.year] = (byYearMap[y.year] || 0) + y.total;
+    });
+    byVehicle.push({ name: v.name, color: v.color, total: stats.total });
+
+    // Répartition par catégorie : computeCostStats() ne garde pas le typeId,
+    // donc recalculée ici avec la même déduplication par batchId.
+    var seenBatch = {};
+    entries.forEach(function(e){
+      if(e.cost == null) return;
+      if(e.batchId){
+        if(seenBatch[e.batchId]) return;
+        seenBatch[e.batchId] = true;
+      }
+      var typeObj = state.types.filter(function(t){ return t.id === e.typeId; })[0];
+      var cat = typeObj ? (typeObj.category || 'autre') : 'autre';
+      byCategoryMap[cat] = (byCategoryMap[cat] || 0) + e.cost;
+    });
+  });
+
+  var byYear = Object.keys(byYearMap).sort(function(a,b){ return b - a; }).map(function(y){
+    return { year: y, total: byYearMap[y] };
+  });
+  var byCategory = Object.keys(byCategoryMap).map(function(cat){
+    var catObj = HISTORY_CATEGORIES.filter(function(c){ return c.id === cat; })[0];
+    return { id: cat, label: catObj ? catObj.label : cat, total: byCategoryMap[cat] };
+  }).sort(function(a,b){ return b.total - a.total; });
+
+  byVehicle.sort(function(a,b){ return b.total - a.total; });
+
+  return { hasAny: total > 0, total: total, currentYear: currentYear, byYear: byYear, byCategory: byCategory, byVehicle: byVehicle };
+}
+
 function median(nums){
   if(!nums.length) return null;
   var sorted = nums.slice().sort(function(a, b){ return a - b; });
