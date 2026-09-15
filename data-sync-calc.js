@@ -298,11 +298,19 @@ async function applySyncOps(ops){
   if(ops.plannedUpsert.length){ ops.plannedUpsert.forEach(function(r){ markPendingEcho('planned_interventions', r.id); }); tasks.push(sb.from('planned_interventions').upsert(ops.plannedUpsert)); }
   if(ops.plannedDelete.length){ ops.plannedDelete.forEach(function(id){ markPendingEcho('planned_interventions', id); }); tasks.push(sb.from('planned_interventions').delete().in('id', ops.plannedDelete)); }
 
-  // Réglages restants (journal, types, checklist) : toujours réécrits en
-  // entier, volume négligeable et jamais partagés entre utilisateurs.
+  // Journal : reste propre à chaque utilisateur, jamais partagé.
   tasks.push(sb.from('user_settings').upsert({
     user_id: currentUser.id,
     journal: state.journal || [],
+    updated_at: new Date().toISOString()
+  }));
+
+  // Types d'intervention + checklist : table partagée entre tous les comptes
+  // (voir shared_settings) — un type créé par un compte doit rester visible
+  // par toute personne à qui un véhicule est partagé.
+  markPendingEcho('shared_settings', 'default');
+  tasks.push(sb.from('shared_settings').upsert({
+    id: 'default',
     types: state.types || [],
     checklist_items: state.checklistItems || [],
     updated_at: new Date().toISOString()
@@ -448,12 +456,18 @@ async function loadState(){
       sb.from('sessions').select('*'),
       sb.from('planned_interventions').select('*'),
       sb.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle(),
-      sb.from('vehicle_shares').select('vehicle_id, role').eq('shared_with_user_id', currentUser.id).eq('status', 'active')
+      sb.from('vehicle_shares').select('vehicle_id, role').eq('shared_with_user_id', currentUser.id).eq('status', 'active'),
+      sb.from('shared_settings').select('*').eq('id', 'default').maybeSingle()
     ]);
-    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4], sharesRes = results[5];
+    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4], sharesRes = results[5], sharedSettRes = results[6];
 
-    var firstErr = results.map(function(r){ return r.error; }).filter(Boolean)[0];
-    if(firstErr) throw firstErr;
+    var errors = results.map(function(r){ return r.error; }).filter(Boolean);
+    if(errors.length){
+      errors.forEach(function(err){ console.error('Erreur chargement (une requête du lot) :', err); });
+      var combinedLoadErr = new Error(errors.map(function(e){ return e.message; }).join(' | '));
+      combinedLoadErr.code = errors[0].code;
+      throw combinedLoadErr;
+    }
 
     myVehicleRoles = {};
     (sharesRes.data || []).forEach(function(row){
@@ -510,16 +524,22 @@ async function loadState(){
     });
 
     var settings = settRes.data || {};
+    var sharedSettings = sharedSettRes.data || {};
 
     state = {
       vehicles: vehicles,
       entries: entries,
       order: order,
-      types: (settings.types && settings.types.length) ? settings.types : DEFAULT_TYPES.slice(),
+      // types/checklistItems viennent maintenant de `shared_settings` (table
+      // commune à tous les comptes, pas propre à l'utilisateur connecté) —
+      // sinon un type créé par un compte (ex: "Liquide de frein") devient
+      // invisible pour toute personne à qui un véhicule est partagé, alors
+      // que le véhicule lui-même l'est bien.
+      types: (sharedSettings.types && sharedSettings.types.length) ? sharedSettings.types : DEFAULT_TYPES.slice(),
       journal: settings.journal || [],
       plannedInterventions: planned,
       sessions: sessions,
-      checklistItems: (settings.checklist_items && settings.checklist_items.length) ? settings.checklist_items : DEFAULT_CHECKLIST_ITEMS.slice()
+      checklistItems: (sharedSettings.checklist_items && sharedSettings.checklist_items.length) ? sharedSettings.checklist_items : DEFAULT_CHECKLIST_ITEMS.slice()
     };
 
     refreshLastSynced();
@@ -699,6 +719,7 @@ function subscribeRealtime(){
     .on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, makeRealtimeHandler('entries', reload))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, makeRealtimeHandler('sessions', reload))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'planned_interventions' }, makeRealtimeHandler('planned_interventions', reload))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_settings' }, makeRealtimeHandler('shared_settings', reload))
     .subscribe();
 }
 

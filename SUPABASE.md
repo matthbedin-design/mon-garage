@@ -34,10 +34,17 @@ restriction uniquement côté client sans l'ajouter aussi en RLS.
 | `entries` | Une intervention réalisée | `id`, `vehicle_id`, `type_id`, `date`, `km`, `cost`, `notes`, `garage`, `supplier`, `invoice_doc` (jsonb), `batch_id`, `ct` (jsonb), `documents` (jsonb), `created_at`, `updated_at`, `session_id`, `created_by` |
 | `sessions` | Une fiche de vérification (checklist) | `id`, `vehicle_id`, `data` (jsonb), `status`, `created_by` |
 | `planned_interventions` | Une intervention "à prévoir" | `id`, `vehicle_id`, `label`, `notes`, `created_at`, `source_session_id`, `source_item_id`, `created_by` |
-| `user_settings` | Réglages non partagés par utilisateur | `user_id` (PK), `journal` (jsonb), `types` (jsonb), `checklist_items` (jsonb), `updated_at` |
+| `user_settings` | Réglages non partagés par utilisateur | `user_id` (PK), `journal` (jsonb), ~~`types` (jsonb)~~, ~~`checklist_items` (jsonb)~~ (colonnes mortes depuis le 14/09/2026, voir note plus bas), `updated_at` |
 | `vehicle_shares` | Partage d'un véhicule avec un autre compte | `id`, `vehicle_id`, `owner_id`, `invited_email`, `role` (`viewer`/`contributor`/`editor`), `shared_with_user_id`, `status` (`pending`/`active`) |
 | `user_data` | Miroir JSON complet de l'état (source des sauvegardes/historique ; n'est plus utilisé pour charger l'app, best-effort) | `user_id` (PK), `state` (jsonb), `updated_at` |
 | `user_data_history` | Archive automatique (trigger sur `user_data`), purgée après 90 jours | `id`, `user_id`, `state` (jsonb), `updated_at`, `archived_at` |
+| `shared_settings` | Table **partagée entre tous les comptes** (pas de `user_id`) : palette de types d'intervention et de checklist. Une seule ligne, `id = 'default'`. Ajoutée le 14/09/2026 — voir journal. | `id` (PK, toujours `'default'`), `types` (jsonb), `checklist_items` (jsonb), `updated_at` |
+
+⚠️ `user_settings.types` et `user_settings.checklist_items` existent encore dans
+le schéma mais **ne sont plus lus ni écrits par le code depuis le 14/09/2026**
+(remplacés par `shared_settings`, voir journal) — colonnes mortes, à
+supprimer un jour par nettoyage (`alter table user_settings drop column
+types, drop column checklist_items;`), sans urgence.
 
 ## Policies RLS (vérifiées en direct le 13/09/2026)
 
@@ -69,6 +76,7 @@ order by tablename, cmd;
 | `vehicle_shares` | `shares_delete` | DELETE | `owner_id = auth.uid()` | — |
 | `user_data` | `user_data_owner` | ALL | `auth.uid() = user_id` | `auth.uid() = user_id` |
 | `user_settings` | `settings_select` / `settings_insert` / `settings_update` | SELECT/INSERT/UPDATE | `user_id = auth.uid()` | `user_id = auth.uid()` |
+| `shared_settings` | `shared_settings_select` / `shared_settings_insert` / `shared_settings_update` | SELECT/INSERT/UPDATE | `auth.role() = 'authenticated'` | `auth.role() = 'authenticated'` |
 
 Pas de policy DELETE sur `user_settings` (personne ne peut supprimer sa ligne
 de réglages via l'API — non bloquant, l'app ne le fait jamais).
@@ -236,6 +244,29 @@ clair dans sa définition — à migrer vers **Supabase Vault** dès que possibl
 reproduise pas à la prochaine modification de ce job.
 
 ## Journal des vérifications/modifications
+
+- **14/09/2026 — Bug trouvé en testant Realtime : les types d'intervention et
+  la checklist n'étaient pas partagés entre comptes.** En testant le partage
+  d'un véhicule, un type personnalisé créé par le propriétaire (ex :
+  "Liquide de frein") restait invisible pour le compte avec qui le véhicule
+  était partagé — son échéance disparaissait silencieusement (pas d'erreur).
+  Cause : `types`/`checklist_items` vivaient dans `user_settings`, une table
+  strictement personnelle (`user_id`), alors que les véhicules qui les
+  référencent (`vehicle.enabledTypes`) sont, eux, partagés. Corrigé en créant
+  la table `shared_settings` (une seule ligne, `id = 'default'`, lisible et
+  modifiable par tout compte authentifié — voir schéma et policies
+  ci-dessus), alimentée au départ avec les données existantes du compte
+  principal, et en migrant le code (`loadState`/`applySyncOps`/
+  `subscribeRealtime`) pour lire/écrire dessus au lieu de `user_settings`
+  pour ces deux champs. Le `journal` personnel reste, lui, dans
+  `user_settings` (pas de raison de le partager).
+  **Compromis à connaître** : avant ce correctif, chaque compte avait sa
+  propre liste de types, donc aucune collision possible en écriture (au prix
+  du bug de visibilité ci-dessus). Après, c'est une seule ligne partagée par
+  tous les comptes — en cas d'édition simultanée de la liste de types par
+  deux comptes à quelques secondes d'écart, la même règle "dernier écrivain
+  gagne" déjà documentée pour les autres tables s'applique ici aussi.
+  Négligeable en usage familial normal (la liste de types change rarement).
 
 - **13/09/2026 — Realtime : bug fonctionnel trouvé et corrigé.** La publication
   `supabase_realtime` était **vide** (0 table) — la synchro en temps réel
