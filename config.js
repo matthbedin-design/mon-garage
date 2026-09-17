@@ -20,6 +20,72 @@ var DEFAULT_TYPES = [
   { id: 'ct', label: 'Contrôle Technique', km: null, months: 24, category: 'ct' }
 ];
 
+// Suggestions génériques d'intervalles par carburant et usage annuel —
+// approximatives (indicatives, comme le rappellent tous les guides
+// d'entretien généralistes), PAS des données constructeur précises par
+// modèle. Objectif : donner un point de départ raisonnable sans dépendre
+// d'un service tiers payant. L'utilisateur reste libre de tout ajuster
+// ensuite. `ct` est volontairement absent : sa périodicité est légale, pas
+// liée à l'usage. `liquide-de-frein` n'est appliqué que si ce type existe
+// déjà (créé par un utilisateur) — voir applyMaintenancePreset().
+var MAINTENANCE_PRESETS = {
+  thermique: {
+    label: 'Essence / Diesel',
+    usage: {
+      low:  { label: 'Faible usage (< 10 000 km/an)', values: {
+        'vidange':          { km: 15000, months: 12 },
+        'filtre-huile':     { km: 15000, months: 12 },
+        'filtre-air':       { km: null,  months: 24 },
+        'filtre-habitacle': { km: null,  months: 24 },
+        'distribution':     { km: null,  months: 60 },
+        'freins-avant':     { km: null,  months: 12 }
+      }},
+      mid:  { label: 'Usage moyen (10 000 - 20 000 km/an)', values: {
+        'vidange':          { km: 12500, months: 12 },
+        'filtre-huile':     { km: 12500, months: 12 },
+        'filtre-air':       { km: 20000, months: 24 },
+        'filtre-habitacle': { km: 20000, months: 24 },
+        'distribution':     { km: 70000, months: 60 },
+        'freins-avant':     { km: 35000, months: null }
+      }},
+      high: { label: 'Usage important (> 20 000 km/an)', values: {
+        'vidange':          { km: 10000, months: 12 },
+        'filtre-huile':     { km: 10000, months: 12 },
+        'filtre-air':       { km: 15000, months: 12 },
+        'filtre-habitacle': { km: 15000, months: 12 },
+        'distribution':     { km: 60000, months: 48 },
+        'freins-avant':     { km: 25000, months: null }
+      }}
+    }
+  },
+  electrique: {
+    label: 'Électrique',
+    usage: {
+      // Pas de vidange, filtre à huile/air ou distribution (aucun moteur
+      // thermique). Les plaquettes durent généralement plus longtemps grâce
+      // au freinage régénératif.
+      low:  { label: 'Faible usage (< 10 000 km/an)', values: {
+        'filtre-habitacle': { km: null, months: 24 },
+        'freins-avant':     { km: null, months: 24 }
+      }},
+      mid:  { label: 'Usage moyen (10 000 - 20 000 km/an)', values: {
+        'filtre-habitacle': { km: 20000, months: 24 },
+        'freins-avant':     { km: 60000, months: 24 }
+      }},
+      high: { label: 'Usage important (> 20 000 km/an)', values: {
+        'filtre-habitacle': { km: 15000, months: 12 },
+        'freins-avant':     { km: 50000, months: 24 }
+      }}
+    }
+  },
+  // Appliqué en plus du bloc ci-dessus si le type existe (créé manuellement
+  // par un utilisateur) — le liquide de frein se dégrade avec le temps
+  // (hygroscopique) indépendamment de la motorisation.
+  extra: {
+    'liquide-de-frein': { km: null, months: 24 }
+  }
+};
+
 var HISTORY_CATEGORIES = [
   { id: 'entretien', label: 'Entretien' },
   { id: 'pneus', label: 'Pneus' },

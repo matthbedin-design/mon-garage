@@ -135,6 +135,7 @@ function openSettingsModal(){
         '<button id="addTypeBtn">+ Ajouter</button>' +
       '</div>' +
       '<button type="button" class="export-btn" id="openTypesManagerBtn" style="margin-top:10px;">🏷️ Gérer les types pour plusieurs véhicules</button>' +
+      (iCanEdit ? '<button type="button" class="export-btn" id="openPresetsBtn" style="margin-top:8px;">💡 Suggérer des échéances selon mon usage</button>' : '') +
     '</div>' +
     '<div class="modal-actions" style="margin-top:16px;">' +
       (iAmOwner ? '<button class="btn btn-ghost" id="shareVehicleBtn">🔗 Partager</button>' : '') +
@@ -194,6 +195,13 @@ function openSettingsModal(){
     collectSettingsFormData(v, modal, swatchWrap);
     persist().then(warnIfSaveFailed);
     openTypesManagerModal();
+  };
+
+  var openPresetsBtn = document.getElementById('openPresetsBtn');
+  if(openPresetsBtn) openPresetsBtn.onclick = function(){
+    collectSettingsFormData(v, modal, swatchWrap);
+    persist().then(warnIfSaveFailed);
+    openMaintenancePresetsModal(activeVehicleId);
   };
 
   document.getElementById('addTypeBtn').onclick = async function(){
@@ -394,6 +402,103 @@ async function deleteType(typeId){
 function openTypesManagerModal(){
   renderTypesManagerModal();
   document.getElementById('modalOverlay').classList.add('open');
+}
+
+// ---- Modale : suggestions d'échéances génériques (par carburant + usage) ----
+// Rappel volontaire à chaque ouverture : ce ne sont PAS des données
+// constructeur précises par modèle (voir MAINTENANCE_PRESETS dans config.js).
+function fuelToPresetKey(fuel){
+  return (fuel === 'Électrique') ? 'electrique' : 'thermique';
+}
+
+function openMaintenancePresetsModal(vehicleId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+
+  var modal = document.getElementById('modal');
+  var fuelKey = fuelToPresetKey(v.fuel);
+  var usageKey = 'mid';
+
+  function renderPreview(){
+    var preset = MAINTENANCE_PRESETS[fuelKey].usage[usageKey];
+    var rows = '';
+    Object.keys(preset.values).concat(Object.keys(MAINTENANCE_PRESETS.extra)).forEach(function(typeId){
+      var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
+      if(!typeObj) return; // le type n'existe pas (pas encore créé) : on l'ignore silencieusement
+      var vals = preset.values[typeId] || MAINTENANCE_PRESETS.extra[typeId];
+      if(!vals) return;
+      var parts = [];
+      if(vals.km) parts.push(vals.km.toLocaleString('fr-FR') + ' km');
+      if(vals.months) parts.push(vals.months + ' mois');
+      rows += '<label style="display:flex; align-items:center; gap:8px; padding:6px 0;">' +
+        '<input type="checkbox" class="preset-check" data-type="' + typeId + '" checked>' +
+        '<span style="flex:1;">' + escapeHtml(typeObj.label) + '</span>' +
+        '<span class="field-hint" style="margin:0;">' + (parts.join(' / ') || '—') + '</span>' +
+        '</label>';
+    });
+    document.getElementById('presetPreviewRows').innerHTML = rows || '<div class="empty-state">Aucun type d\'intervention correspondant.</div>';
+  }
+
+  modal.innerHTML =
+    '<h3>Suggérer des échéances <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<div class="field-hint" style="margin-bottom:12px;">Valeurs indicatives génériques, pas les données précises de ton constructeur ni de ton modèle exact — un point de départ à ajuster si besoin, pas une vérité absolue.</div>' +
+    '<div class="field"><label>Carburant</label><select id="presetFuelSelect">' +
+      Object.keys(MAINTENANCE_PRESETS).filter(function(k){ return k !== 'extra'; }).map(function(k){
+        return '<option value="' + k + '"' + (k === fuelKey ? ' selected' : '') + '>' + MAINTENANCE_PRESETS[k].label + '</option>';
+      }).join('') +
+    '</select></div>' +
+    '<div class="field"><label>Usage annuel approximatif</label><select id="presetUsageSelect">' +
+      ['low','mid','high'].map(function(k){
+        return '<option value="' + k + '"' + (k === usageKey ? ' selected' : '') + '>' + MAINTENANCE_PRESETS[fuelKey].usage[k].label + '</option>';
+      }).join('') +
+    '</select></div>' +
+    '<hr class="hr">' +
+    '<div id="presetPreviewRows"></div>' +
+    '<div class="modal-actions" style="margin-top:16px;">' +
+      '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
+      '<button class="btn btn-primary" id="applyPresetsBtn">Appliquer les échéances cochées</button>' +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  renderPreview();
+
+  document.getElementById('presetFuelSelect').onchange = function(){
+    fuelKey = this.value;
+    usageKey = 'mid';
+    // Reconstruit la liste des options d'usage (les libellés dépendent du carburant choisi)
+    var usageSelect = document.getElementById('presetUsageSelect');
+    usageSelect.innerHTML = ['low','mid','high'].map(function(k){
+      return '<option value="' + k + '"' + (k === usageKey ? ' selected' : '') + '>' + MAINTENANCE_PRESETS[fuelKey].usage[k].label + '</option>';
+    }).join('');
+    renderPreview();
+  };
+  document.getElementById('presetUsageSelect').onchange = function(){
+    usageKey = this.value;
+    renderPreview();
+  };
+
+  document.getElementById('applyPresetsBtn').onclick = async function(){
+    var preset = MAINTENANCE_PRESETS[fuelKey].usage[usageKey];
+    var applied = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('.preset-check:checked'), function(cb){
+      var typeId = cb.getAttribute('data-type');
+      var vals = preset.values[typeId] || MAINTENANCE_PRESETS.extra[typeId];
+      if(!vals) return;
+      if(!v.intervals) v.intervals = {};
+      v.intervals[typeId] = { km: vals.km || null, months: vals.months || null };
+      if(v.enabledTypes.indexOf(typeId) === -1) v.enabledTypes.push(typeId);
+      applied++;
+    });
+    if(applied === 0){ closeModal(); return; }
+    logEvent(vehicleId, applied + ' échéance(s) mise(s) à jour via les suggestions génériques');
+    var saved = await persist();
+    closeModal();
+    render();
+    await warnIfSaveFailed(saved);
+  };
 }
 
 function renderTypesManagerModal(){
