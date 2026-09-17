@@ -57,7 +57,15 @@ Aucun bundler : les fichiers JS sont chargés dans l'ordre via `<script>` dans
 - `config.js` — configuration Supabase, types d'entretien et checklist par
   défaut, état global (`state`).
 - `ui-common.js` — utilitaires transverses (confirmation/alerte, formatage,
-  compression d'images, upload/URLs signées Storage, graphique de coûts SVG).
+  compression d'images, upload/URLs signées Storage, graphique de coûts SVG,
+  statistiques globales tous véhicules confondus).
+- `carte-grise-ocr.js` — scan OCR de la carte grise pour pré-remplir la fiche
+  véhicule (marque, modèle, VIN, carburant, date de mise en circulation).
+  Utilise Tesseract.js (chargé en CDN dans `index.html`) **entièrement dans
+  le navigateur** — la photo n'est jamais envoyée à un service tiers pour
+  l'analyse. Ignore volontairement les zones d'identité du titulaire (nom,
+  adresse). L'utilisateur choisit explicitement de conserver ou non la photo
+  comme document du véhicule.
 - `data-sync-calc.js` — persistance cloud (`loadState`/`persist`), auth,
   partage de véhicules, calcul des échéances (`computeStatus`).
 - `render.js` — rendu de l'interface (tableau de bord, fiche véhicule,
@@ -65,7 +73,7 @@ Aucun bundler : les fichiers JS sont chargés dans l'ordre via `<script>` dans
 - `entry-modal.js` — modale d'ajout/édition d'une intervention (dont la
   section Contrôle Technique et contre-visite).
 - `vehicle-modals.js` — modales véhicule : réglages, ajout, suppression,
-  partage.
+  partage (avec expiration optionnelle), suggestions d'échéances génériques.
 - `checklist-sessions.js` — fiches de vérification (checklist), interventions
   à prévoir.
 - `export-dossier.js` — export PDF (impression), CSV, et par e-mail.

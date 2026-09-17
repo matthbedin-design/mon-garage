@@ -110,6 +110,7 @@ function openSettingsModal(){
     '<div class="field"><label>Couleur</label><div class="swatches" id="s-swatches"></div></div>' +
     '<hr class="hr">' +
     '<div class="field-hint" style="margin-bottom:8px;">Fiche véhicule (facultatif)</div>' +
+    (iCanEdit ? '<button type="button" class="export-btn" id="scanCarteGriseBtn" style="margin-bottom:10px;">📷 Scanner la carte grise</button>' : '') +
     '<div class="row2">' +
       '<div class="field"><label>Marque</label><input type="text" id="s-brand" value="' + escapeHtml(v.brand || '') + '" placeholder="Ex : Renault"></div>' +
       '<div class="field"><label>Modèle</label><input type="text" id="s-model" value="' + escapeHtml(v.model || '') + '" placeholder="Ex : Kangoo"></div>' +
@@ -202,6 +203,39 @@ function openSettingsModal(){
     collectSettingsFormData(v, modal, swatchWrap);
     persist().then(warnIfSaveFailed);
     openMaintenancePresetsModal(activeVehicleId);
+  };
+
+  var scanCarteGriseBtn = document.getElementById('scanCarteGriseBtn');
+  if(scanCarteGriseBtn) scanCarteGriseBtn.onclick = function(){
+    openCarteGriseScanModal({
+      vehicleId: activeVehicleId,
+      onApply: async function(fields, keepPhotoFile){
+        if(fields.brand) v.brand = fields.brand;
+        if(fields.model) v.model = fields.model;
+        if(fields.year) v.year = fields.year;
+        if(fields.fuel) v.fuel = fields.fuel;
+        if(fields.vin) v.vin = fields.vin;
+        if(fields.firstRegDate) v.firstRegDate = fields.firstRegDate;
+
+        if(keepPhotoFile){
+          try {
+            var dataUrl = await prepareDocForStorage(keepPhotoFile);
+            if(dataUrl){
+              var path = await uploadDocToStorage(dataUrl, 'image/jpeg', 'carte-grise.jpg', activeVehicleId);
+              v.documents = v.documents || [];
+              v.documents.push({ name: 'Carte grise', type: 'image/jpeg', path: path });
+              logEvent(activeVehicleId, 'Carte grise ajoutée aux documents');
+            }
+          } catch(err){
+            console.error('Erreur upload carte grise:', err);
+            await showAlert('Les informations ont été reprises, mais la photo n\'a pas pu être jointe (' + describeSyncError(err) + ').');
+          }
+        }
+        // Réouvre les réglages, reconstruits depuis `v` qui vient d'être mis à
+        // jour — les champs pré-remplis restent à vérifier avant "Enregistrer".
+        openSettingsModal();
+      }
+    });
   };
 
   document.getElementById('addTypeBtn').onclick = async function(){
@@ -657,9 +691,12 @@ function renderTypesManagerModal(){
 function openAddVehicleModal(){
   var modal = document.getElementById('modal');
   var usedColor = PALETTE[state.order.length % PALETTE.length];
+  var pendingCarteGriseFields = null;
+  var pendingCarteGrisePhoto = null;
 
   modal.innerHTML =
     '<h3>Ajouter un véhicule <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    '<button type="button" class="export-btn" id="scanCarteGriseBtn" style="margin-bottom:10px;">📷 Pré-remplir depuis la carte grise</button>' +
     '<div class="field"><label>Nom</label><input type="text" id="nv-name" placeholder="Ex : Clio, Camping-car..."></div>' +
     '<div class="field"><label>Type de véhicule</label><select id="nv-vehicletype">' +
       '<option value="motorized">Véhicule à moteur (suivi au kilométrage)</option>' +
@@ -667,6 +704,7 @@ function openAddVehicleModal(){
     '</select></div>' +
     '<div class="field" id="nv-km-field"><label>Kilométrage actuel</label><input type="number" id="nv-km" value="0"></div>' +
     '<div class="field"><label>Couleur</label><div class="swatches" id="nv-swatches"></div></div>' +
+    '<div id="nvCarteGriseStatus" style="font-size:12px; color:var(--green); min-height:16px;"></div>' +
     '<div class="modal-actions">' +
       '<button class="btn btn-ghost" id="cancelBtn">Annuler</button>' +
       '<button class="btn btn-primary" id="createVehicleBtn">Créer</button>' +
@@ -688,6 +726,23 @@ function openAddVehicleModal(){
   document.getElementById('modalOverlay').classList.add('open');
   document.getElementById('closeModalBtn').onclick = closeModal;
   document.getElementById('cancelBtn').onclick = closeModal;
+
+  document.getElementById('scanCarteGriseBtn').onclick = function(){
+    openCarteGriseScanModal({
+      vehicleId: null, // le véhicule n'existe pas encore : appliqué à la création (voir createVehicleBtn plus bas)
+      onApply: function(fields, keepPhotoFile){
+        pendingCarteGriseFields = fields;
+        pendingCarteGrisePhoto = keepPhotoFile;
+        if(fields.brand || fields.model){
+          document.getElementById('nv-name').value = [fields.brand, fields.model].filter(Boolean).join(' ');
+        }
+        var foundCount = Object.keys(fields).filter(function(k){ return fields[k]; }).length;
+        document.getElementById('nvCarteGriseStatus').textContent = foundCount
+          ? '✓ Informations de la carte grise reprises pour la création.'
+          : '';
+      }
+    });
+  };
 
   var nvTypeSelect = document.getElementById('nv-vehicletype');
   var nvKmField = document.getElementById('nv-km-field');
@@ -715,6 +770,27 @@ function openAddVehicleModal(){
     vehicle.ownerId = currentUser.id;
     vehicle.vehicleType = vehicleType;
     vehicle.mileage = (vehicleType === 'trailer') ? null : (isNaN(km) ? 0 : km);
+
+    if(pendingCarteGriseFields){
+      if(pendingCarteGriseFields.brand) vehicle.brand = pendingCarteGriseFields.brand;
+      if(pendingCarteGriseFields.model) vehicle.model = pendingCarteGriseFields.model;
+      if(pendingCarteGriseFields.year) vehicle.year = pendingCarteGriseFields.year;
+      if(pendingCarteGriseFields.fuel) vehicle.fuel = pendingCarteGriseFields.fuel;
+      if(pendingCarteGriseFields.vin) vehicle.vin = pendingCarteGriseFields.vin;
+      if(pendingCarteGriseFields.firstRegDate) vehicle.firstRegDate = pendingCarteGriseFields.firstRegDate;
+    }
+    if(pendingCarteGrisePhoto){
+      try {
+        var cgDataUrl = await prepareDocForStorage(pendingCarteGrisePhoto);
+        if(cgDataUrl){
+          var cgPath = await uploadDocToStorage(cgDataUrl, 'image/jpeg', 'carte-grise.jpg', id);
+          vehicle.documents = [{ name: 'Carte grise', type: 'image/jpeg', path: cgPath }];
+        }
+      } catch(err){
+        console.error('Erreur upload carte grise:', err);
+        await showAlert('Le véhicule sera créé, mais la photo de la carte grise n\'a pas pu être jointe (' + describeSyncError(err) + ').');
+      }
+    }
 
     state.vehicles[id] = vehicle;
     state.entries[id] = [];
