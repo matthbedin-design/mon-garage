@@ -391,6 +391,8 @@ async function persist(){
 // loadState depuis vehicle_shares). Les véhicules possédés n'ont pas besoin
 // d'entrée ici : isOwner() suffit.
 var myVehicleRoles = {};
+var myAccessExpiresAt = {};  // { vehicleId: expires_at ou null } — mon propre accès, si je suis invité (pas owner)
+var mySharesByVehicle = {};  // { vehicleId: [{role, status, expiresAt}, ...] } — les partages que j'ai créés en tant que owner
 
 function isOwner(vehicleId){
   var v = state.vehicles[vehicleId];
@@ -456,10 +458,11 @@ async function loadState(){
       sb.from('sessions').select('*'),
       sb.from('planned_interventions').select('*'),
       sb.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle(),
-      sb.from('vehicle_shares').select('vehicle_id, role').eq('shared_with_user_id', currentUser.id).eq('status', 'active'),
-      sb.from('shared_settings').select('*').eq('id', 'default').maybeSingle()
+      sb.from('vehicle_shares').select('vehicle_id, role, expires_at').eq('shared_with_user_id', currentUser.id).eq('status', 'active'),
+      sb.from('shared_settings').select('*').eq('id', 'default').maybeSingle(),
+      sb.from('vehicle_shares').select('vehicle_id, role, status, expires_at').eq('owner_id', currentUser.id)
     ]);
-    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4], sharesRes = results[5], sharedSettRes = results[6];
+    var vehRes = results[0], entRes = results[1], sesRes = results[2], planRes = results[3], settRes = results[4], sharesRes = results[5], sharedSettRes = results[6], myOwnedSharesRes = results[7];
 
     var errors = results.map(function(r){ return r.error; }).filter(Boolean);
     if(errors.length){
@@ -470,8 +473,16 @@ async function loadState(){
     }
 
     myVehicleRoles = {};
+    myAccessExpiresAt = {};
     (sharesRes.data || []).forEach(function(row){
       myVehicleRoles[row.vehicle_id] = row.role;
+      myAccessExpiresAt[row.vehicle_id] = row.expires_at || null;
+    });
+
+    mySharesByVehicle = {};
+    (myOwnedSharesRes.data || []).forEach(function(row){
+      if(!mySharesByVehicle[row.vehicle_id]) mySharesByVehicle[row.vehicle_id] = [];
+      mySharesByVehicle[row.vehicle_id].push({ role: row.role, status: row.status, expiresAt: row.expires_at || null });
     });
 
     var vehicles = {}, order = [];
@@ -720,6 +731,11 @@ function subscribeRealtime(){
     .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, makeRealtimeHandler('sessions', reload))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'planned_interventions' }, makeRealtimeHandler('planned_interventions', reload))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_settings' }, makeRealtimeHandler('shared_settings', reload))
+    // vehicle_shares : pas de suivi d'écho dédié (les écritures s'y font
+    // directement depuis vehicle-modals.js, hors persist()/applySyncOps) —
+    // une action de partage qu'on fait soi-même déclenche donc un
+    // rechargement complet redondant mais inoffensif, plutôt qu'un vrai bug.
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_shares' }, reload)
     .subscribe();
 }
 

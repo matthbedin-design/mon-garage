@@ -234,6 +234,23 @@ bucket.
 *(Contenu de ces fonctions non audité dans cette session — à faire si besoin,
 même principe : coller le code ici une fois vérifié.)*
 
+## Realtime
+
+Tables actuellement dans la publication `supabase_realtime` (vérifiable via
+`select tablename from pg_publication_tables where pubname =
+'supabase_realtime';`) :
+
+- `vehicles`, `entries`, `sessions`, `planned_interventions` — ajoutées le
+  13/09/2026 (la publication était vide avant, voir journal : Realtime ne
+  fonctionnait donc jamais en pratique).
+- `shared_settings` — ajoutée le 14/09/2026 en même temps que la table.
+- `vehicle_shares` — ajoutée le 15/09/2026, pour que le badge de partage sur
+  la fiche véhicule se mette à jour si quelqu'un d'autre modifie un partage
+  pendant la consultation. Pas de suivi d'écho dédié pour cette table (les
+  écritures s'y font hors `persist()`/`applySyncOps()`, directement depuis
+  `vehicle-modals.js`) — une action de partage qu'on fait soi-même déclenche
+  donc un rechargement complet redondant mais inoffensif.
+
 ## Cron jobs (pg_cron)
 
 Vérifiés en direct le 13/09/2026 :
@@ -251,6 +268,21 @@ clair dans sa définition — à migrer vers **Supabase Vault** dès que possibl
 reproduise pas à la prochaine modification de ce job.
 
 ## Journal des vérifications/modifications
+
+- **15/09/2026 — Deux nouvelles fonctionnalités : graphique d'évolution du
+  kilométrage et badge de partage sur la fiche véhicule.**
+  - *Graphique kilométrage* (`renderKmChart()` dans `ui-common.js`, affiché
+    dans `render.js`) : courbe SVG, un point par date où un kilométrage a été
+    renseigné, complétée par le kilométrage actuel. Purement front-end.
+  - *Badge de partage* : nouvelle requête dans `loadState()`
+    (`vehicle_shares` où `owner_id = moi`) pour que le propriétaire voie, sur
+    la fiche de chaque véhicule, s'il est partagé et jusqu'à quand (le plus
+    proche des expirations actives) ; côté invité, son propre rôle et sa
+    propre expiration sont affichés (déjà récupérés via `expires_at` ajouté
+    à la requête existante de `myVehicleRoles`). `vehicle_shares` ajoutée à
+    la publication Realtime pour que le badge se mette à jour si un partage
+    change pendant que la fiche est ouverte (voir section Realtime
+    ci-dessus pour le détail du compromis "pas d'écho dédié").
 
 - **15/09/2026 — Nouvelles fonctionnalités : statistiques globales + partage
   temporaire.**

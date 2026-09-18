@@ -253,6 +253,29 @@ function renderContent(){
   html += '<div>';
   html += '<h1 class="vehicle-name">' + escapeHtml(v.name) + '</h1>';
   html += '<input type="text" class="vehicle-plate-input" id="v-plate" value="' + escapeHtml(v.plate || '') + '" placeholder="Immatriculation (ex: AA-123-BB)">';
+
+  // Indicateur de partage : pour le propriétaire, qui a accès et jusqu'à
+  // quand ; pour un invité, son propre niveau d'accès et son expiration.
+  if(isOwner(activeVehicleId)){
+    var activeShares = (mySharesByVehicle[activeVehicleId] || []).filter(function(s){
+      return s.status === 'active' && (!s.expiresAt || new Date(s.expiresAt) > new Date());
+    });
+    if(activeShares.length){
+      var soonest = activeShares.filter(function(s){ return s.expiresAt; })
+        .sort(function(a, b){ return a.expiresAt < b.expiresAt ? -1 : 1; })[0];
+      html += '<div class="share-badge share-badge-open" title="Ce véhicule est partagé">🔓 Partagé avec ' + activeShares.length + ' personne' + (activeShares.length > 1 ? 's' : '') +
+        (soonest ? ' · jusqu\'au ' + fmtDate(soonest.expiresAt.substring(0, 10)) : '') + '</div>';
+    } else {
+      html += '<div class="share-badge share-badge-closed" title="Ce véhicule n\'est partagé avec personne">🔒 Non partagé</div>';
+    }
+  } else {
+    var myRole = getVehicleRole(activeVehicleId);
+    var myExpiry = myAccessExpiresAt[activeVehicleId];
+    var roleLabel = (myRole === 'editor') ? 'édition' : (myRole === 'contributor' ? 'contributeur' : 'lecture seule');
+    html += '<div class="share-badge share-badge-open" title="Ton accès à ce véhicule">🔓 Accès ' + roleLabel +
+      (myExpiry ? ' · jusqu\'au ' + fmtDate(myExpiry.substring(0, 10)) : '') + '</div>';
+  }
+
   html += '</div>';
   html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule" aria-label="Réglages du véhicule">' + gearSvg() + '</button>';
   html += '</div>';
@@ -447,6 +470,15 @@ function renderContent(){
       }
     }
     html += '</div>'; // fin #costsBody
+    html += '</section>';
+  }
+
+  // Section 1quater : Évolution du kilométrage
+  var kmChart = renderKmChart(entries, v.mileage, v.color || 'var(--yellow)');
+  if(kmChart.hasEnough){
+    html += '<section>';
+    html += '<h2 class="section-title">Évolution du kilométrage</h2>';
+    html += '<div class="cost-chart-wrap">' + kmChart.svg + '</div>';
     html += '</section>';
   }
 

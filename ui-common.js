@@ -473,6 +473,65 @@ function renderCostChart(byYearAll, yearsCount, accentColor){
   return { svg: svg, avg: avg, med: med };
 }
 
+// Graphique d'évolution du kilométrage dans le temps — courbe (pas des
+// barres, contrairement aux coûts) car c'est une progression continue, pas
+// des totaux par période. Un point par date unique où un km a été renseigné
+// (le plus élevé si plusieurs entrées partagent la même date), complété par
+// le kilométrage actuel du véhicule à la date du jour pour que la courbe
+// aille jusqu'à "maintenant".
+function renderKmChart(entries, currentMileage, accentColor){
+  var byDate = {};
+  entries.forEach(function(e){
+    if(e.km == null) return;
+    if(byDate[e.date] == null || e.km > byDate[e.date]) byDate[e.date] = e.km;
+  });
+  var todayIso = todayLocalISO();
+  if(currentMileage != null && (byDate[todayIso] == null || currentMileage > byDate[todayIso])){
+    byDate[todayIso] = currentMileage;
+  }
+
+  var points = Object.keys(byDate).map(function(d){ return { date: d, km: byDate[d] }; })
+    .sort(function(a, b){ return a.date < b.date ? -1 : 1; });
+
+  if(points.length < 2) return { svg: '', hasEnough: false };
+
+  var minDate = new Date(points[0].date).getTime();
+  var maxDate = new Date(points[points.length - 1].date).getTime();
+  var dateSpan = Math.max(1, maxDate - minDate);
+  var minKm = Math.min.apply(null, points.map(function(p){ return p.km; }));
+  var maxKm = Math.max.apply(null, points.map(function(p){ return p.km; }));
+  var kmSpan = Math.max(1, maxKm - minKm);
+
+  var w = 640, h = 210;
+  var pad = { top: 26, right: 14, bottom: 26, left: 14 };
+  var chartW = w - pad.left - pad.right;
+  var chartH = h - pad.top - pad.bottom;
+
+  function xFor(d){ return pad.left + ((new Date(d).getTime() - minDate) / dateSpan) * chartW; }
+  function yFor(km){ return pad.top + chartH - ((km - minKm) / kmSpan) * chartH; }
+
+  var pathD = points.map(function(p, i){
+    return (i === 0 ? 'M' : 'L') + xFor(p.date).toFixed(1) + ',' + yFor(p.km).toFixed(1);
+  }).join(' ');
+
+  var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="cost-chart-svg" preserveAspectRatio="xMidYMid meet">';
+  svg += '<path d="' + pathD + '" style="fill:none; stroke:' + accentColor + '; stroke-width:2.5;" />';
+
+  points.forEach(function(p, i){
+    var x = xFor(p.date), y = yFor(p.km);
+    var isEdge = (i === 0 || i === points.length - 1);
+    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (isEdge ? 4 : 3) + '" style="fill:' + accentColor + ';" />';
+    if(isEdge){
+      var anchor = (i === 0) ? 'start' : 'end';
+      svg += '<text x="' + x.toFixed(1) + '" y="' + (y - 10).toFixed(1) + '" text-anchor="' + anchor + '" style="font-size:10.5px; fill:var(--text); font-family:\'JetBrains Mono\',monospace;">' + Math.round(p.km).toLocaleString('fr-FR') + ' km</text>';
+      svg += '<text x="' + x.toFixed(1) + '" y="' + (h - pad.bottom + 16).toFixed(1) + '" text-anchor="' + anchor + '" style="font-size:11px; fill:var(--text-muted); font-family:\'Oswald\',sans-serif;">' + fmtDate(p.date) + '</text>';
+    }
+  });
+
+  svg += '</svg>';
+  return { svg: svg, hasEnough: true };
+}
+
 // Formate un objet Date en "YYYY-MM-DD" à partir de ses composants LOCAUX
 // (jour/mois/année tels qu'affichés sur l'appareil de l'utilisateur), pour
 // pré-remplir un <input type="date">. À privilégier systématiquement sur
