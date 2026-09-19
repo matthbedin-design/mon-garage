@@ -532,6 +532,33 @@ function renderKmChart(entries, currentMileage, accentColor){
   return { svg: svg, hasEnough: true };
 }
 
+// Badge de partage réutilisé sur la fiche véhicule ET sur les cartes du
+// tableau de bord (voir render.js). `compact` raccourcit le texte pour les
+// petites cartes, sans changer la logique.
+function buildShareBadgeHtml(vehicleId, compact){
+  if(isOwner(vehicleId)){
+    var activeShares = (mySharesByVehicle[vehicleId] || []).filter(function(s){
+      return s.status === 'active' && (!s.expiresAt || new Date(s.expiresAt) > new Date());
+    });
+    if(activeShares.length){
+      var soonest = activeShares.filter(function(s){ return s.expiresAt; })
+        .sort(function(a, b){ return a.expiresAt < b.expiresAt ? -1 : 1; })[0];
+      var label = compact
+        ? 'Partagé (' + activeShares.length + ')'
+        : 'Partagé avec ' + activeShares.length + ' personne' + (activeShares.length > 1 ? 's' : '');
+      return '<div class="share-badge share-badge-open" title="Ce véhicule est partagé">🔓 ' + label +
+        (soonest ? ' · jusqu\'au ' + fmtDate(soonest.expiresAt.substring(0, 10)) : '') + '</div>';
+    }
+    return '<div class="share-badge share-badge-closed" title="Ce véhicule n\'est partagé avec personne">🔒 ' + (compact ? 'Privé' : 'Non partagé') + '</div>';
+  }
+
+  var myRole = getVehicleRole(vehicleId);
+  var myExpiry = myAccessExpiresAt[vehicleId];
+  var roleLabel = (myRole === 'editor') ? 'édition' : (myRole === 'contributor' ? 'contributeur' : 'lecture seule');
+  return '<div class="share-badge share-badge-open" title="Ton accès à ce véhicule">🔓 ' + (compact ? roleLabel : 'Accès ' + roleLabel) +
+    (myExpiry ? ' · jusqu\'au ' + fmtDate(myExpiry.substring(0, 10)) : '') + '</div>';
+}
+
 // Formate un objet Date en "YYYY-MM-DD" à partir de ses composants LOCAUX
 // (jour/mois/année tels qu'affichés sur l'appareil de l'utilisateur), pour
 // pré-remplir un <input type="date">. À privilégier systématiquement sur

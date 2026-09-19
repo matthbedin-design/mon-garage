@@ -140,6 +140,7 @@ function renderDashboardContent(content){
     if(!isTrailer(s.v)) metaParts.push(fmtKm(s.v.mileage));
     if(s.v.plate) metaParts.push(escapeHtml(s.v.plate));
     html += '<div class="dash-card-meta">' + metaParts.join(' · ') + '</div>';
+    html += buildShareBadgeHtml(s.id, true);
 
     if(s.alertItems.length){
       html += '<ul class="dash-alert-list">';
@@ -256,25 +257,7 @@ function renderContent(){
 
   // Indicateur de partage : pour le propriétaire, qui a accès et jusqu'à
   // quand ; pour un invité, son propre niveau d'accès et son expiration.
-  if(isOwner(activeVehicleId)){
-    var activeShares = (mySharesByVehicle[activeVehicleId] || []).filter(function(s){
-      return s.status === 'active' && (!s.expiresAt || new Date(s.expiresAt) > new Date());
-    });
-    if(activeShares.length){
-      var soonest = activeShares.filter(function(s){ return s.expiresAt; })
-        .sort(function(a, b){ return a.expiresAt < b.expiresAt ? -1 : 1; })[0];
-      html += '<div class="share-badge share-badge-open" title="Ce véhicule est partagé">🔓 Partagé avec ' + activeShares.length + ' personne' + (activeShares.length > 1 ? 's' : '') +
-        (soonest ? ' · jusqu\'au ' + fmtDate(soonest.expiresAt.substring(0, 10)) : '') + '</div>';
-    } else {
-      html += '<div class="share-badge share-badge-closed" title="Ce véhicule n\'est partagé avec personne">🔒 Non partagé</div>';
-    }
-  } else {
-    var myRole = getVehicleRole(activeVehicleId);
-    var myExpiry = myAccessExpiresAt[activeVehicleId];
-    var roleLabel = (myRole === 'editor') ? 'édition' : (myRole === 'contributor' ? 'contributeur' : 'lecture seule');
-    html += '<div class="share-badge share-badge-open" title="Ton accès à ce véhicule">🔓 Accès ' + roleLabel +
-      (myExpiry ? ' · jusqu\'au ' + fmtDate(myExpiry.substring(0, 10)) : '') + '</div>';
-  }
+  html += buildShareBadgeHtml(activeVehicleId);
 
   html += '</div>';
   html += '<button class="icon-btn" id="settingsBtn" title="Réglages du véhicule" aria-label="Réglages du véhicule">' + gearSvg() + '</button>';
