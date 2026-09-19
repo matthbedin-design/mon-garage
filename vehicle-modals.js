@@ -456,7 +456,10 @@ function openMaintenancePresetsModal(vehicleId){
   function renderPreview(){
     var preset = MAINTENANCE_PRESETS[fuelKey].usage[usageKey];
     var rows = '';
+    var seen = {};
     Object.keys(preset.values).concat(Object.keys(MAINTENANCE_PRESETS.extra)).forEach(function(typeId){
+      if(seen[typeId]) return; // évite un doublon si un type existait dans les deux ensembles
+      seen[typeId] = true;
       var typeObj = state.types.filter(function(t){ return t.id === typeId; })[0];
       if(!typeObj) return; // le type n'existe pas (pas encore créé) : on l'ignore silencieusement
       var vals = preset.values[typeId] || MAINTENANCE_PRESETS.extra[typeId];

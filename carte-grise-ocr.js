@@ -49,10 +49,21 @@ function extractZoneValue(lines, codeRegex){
   return null;
 }
 
-function extractFirstDate(text){
+function extractDate(text){
   var m = text.match(/\b(\d{2})[\/\.\-](\d{2})[\/\.\-](\d{4})\b/);
   if(!m) return null;
   return { day: m[1], month: m[2], year: m[3], iso: m[3] + '-' + m[2] + '-' + m[1] };
+}
+
+// Priorité à la date trouvée près du repère de zone B (première
+// immatriculation) plutôt que "la première date rencontrée n'importe où
+// dans le document" — un certificat contient souvent plusieurs dates
+// (émission du document, etc.), la précédente approche pouvait en attraper
+// une autre que celle voulue.
+function extractFirstRegDate(text, lines){
+  var nearB = extractZoneValue(lines, /^B\b/);
+  var fromZone = nearB ? extractDate(nearB) : null;
+  return fromZone || extractDate(text);
 }
 
 function mapFuelLabel(raw){
@@ -75,7 +86,7 @@ function extractCarteGriseFields(ocrText){
   var model = extractZoneValue(lines, /^D\.?\s?3\b/i);
   var fuelRaw = extractZoneValue(lines, /^P\.?\s?3\b/i);
   var vin = extractVin(ocrText) || extractZoneValue(lines, /^E\b/);
-  var dateB = extractFirstDate(ocrText);
+  var dateB = extractFirstRegDate(ocrText, lines);
 
   return {
     brand: brand ? brand.replace(/[^A-ZÀ-Ÿa-zà-ÿ0-9 \-]/g, '').trim() : null,
