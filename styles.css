@@ -26,7 +26,7 @@
   .vehicle-name{ font-family:'Oswald',sans-serif; font-size:22px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; margin:0; }
   .vehicle-plate-input{ background:transparent; border:none; border-bottom:1px dashed var(--border); color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:13px; padding:2px 0; margin-top:4px; width:150px; }
   .vehicle-plate-input:focus{ outline:none; border-color:var(--accent); color:var(--text); }
-  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); width:34px;height:34px; border-radius:8px; display:flex;align-items:center;justify-content:center; cursor:pointer; flex:none; }
+  .icon-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); width:34px;height:34px; border-radius:8px; display:flex;align-items:center;justify-content:center; cursor:pointer; flex:none; text-decoration:none; }
   .icon-btn:hover{ color:var(--text); border-color:var(--accent); }
 
   .mileage-row{ display:flex; align-items:baseline; gap:8px; margin-top:14px; }

@@ -79,6 +79,11 @@ Aucun bundler : les fichiers JS sont chargés dans l'ordre via `<script>` dans
 - `export-dossier.js` — export PDF (impression), CSV, et par e-mail.
 - `journal-backups-init.js` — journal d'activité, sauvegardes/restauration,
   compte, câblage des événements globaux et démarrage de l'app.
+- `guide.html` — manuel utilisateur ludique et imagé (même thème visuel que
+  l'app), ouvert via le bouton "❓ Aide" dans l'en-tête. **À maintenir à la
+  main** comme les autres fichiers statiques : toute nouvelle fonctionnalité
+  notable mérite une mention ici, et son ajout à `PRECACHE_URLS` dans `sw.js`
+  (voir plus bas).
 - `sw.js` — service worker minimal : met en cache le squelette de l'app
   (HTML/CSS/JS/icônes) pour qu'elle puisse au moins s'ouvrir sans réseau ;
   ne met jamais en cache les appels Supabase. **À maintenir manuellement** :

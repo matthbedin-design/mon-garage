@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carnet de Bord — Guide de démarrage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1B1D1E; --surface:#242628; --surface-2:#2B2E30; --border:#35383A;
+  --text:#ECECE8; --text-muted:#9B9E9F; --yellow:#F0B429; --red:#D9534F; --green:#5FAE7D; --orange:#E8791A;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#1B1D1E; --surface:#242628; --surface-2:#2B2E30; --border:#35383A;
+    --text:#ECECE8; --text-muted:#9B9E9F;
+  }
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  background:var(--bg); color:var(--text); font-family:'Inter',sans-serif;
+  -webkit-font-smoothing:antialiased; line-height:1.55;
+}
+.wrap{ max-width:760px; margin:0 auto; padding:0 20px 100px; }
+h1,h2,h3{ font-family:'Oswald',sans-serif; margin:0; }
+a{ color:var(--yellow); }
+code, .mono{ font-family:'JetBrains Mono',monospace; }
+
+/* ---- Hero ---- */
+.hero{
+  padding:56px 0 40px; text-align:center; position:relative; overflow:hidden;
+}
+.hero-mark{
+  width:64px; height:64px; margin:0 auto 18px; display:flex; align-items:center;
+  justify-content:center; border:2.5px solid var(--yellow); border-radius:50%;
+  font-size:28px;
+}
+.hero h1{
+  font-size:32px; font-weight:600; letter-spacing:0.02em; text-transform:uppercase;
+  color:var(--text);
+}
+.hero .accent{ color:var(--yellow); }
+.hero p.tagline{
+  color:var(--text-muted); font-size:15.5px; max-width:480px; margin:14px auto 0;
+}
+.hero .readtime{
+  display:inline-block; margin-top:18px; padding:5px 14px; border-radius:20px;
+  background:var(--surface); border:1px solid var(--border); font-size:12.5px;
+  color:var(--text-muted);
+}
+
+/* ---- La route : fil conducteur visuel du guide ---- */
+.road{
+  position:relative; margin:8px 0 0; padding-left:34px;
+}
+.road::before{
+  content:''; position:absolute; left:11px; top:8px; bottom:8px; width:2px;
+  background-image:linear-gradient(var(--yellow) 60%, transparent 40%);
+  background-size:2px 14px; background-repeat:repeat-y;
+  opacity:0.55;
+}
+.stop{ position:relative; margin-bottom:44px; }
+.stop:last-child{ margin-bottom:0; }
+.stop-num{
+  position:absolute; left:-34px; top:0; width:24px; height:24px; border-radius:50%;
+  background:var(--yellow); color:#1B1D1E; font-family:'Oswald',sans-serif;
+  font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center;
+}
+.stop-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.stop-emoji{ font-size:26px; line-height:1; }
+.stop h2{ font-size:19px; letter-spacing:0.01em; }
+.stop-body{ color:var(--text); font-size:14.5px; }
+.stop-body p{ margin:0 0 10px; }
+.stop-body ul{ margin:0 0 10px; padding-left:20px; }
+.stop-body li{ margin-bottom:6px; }
+
+.callout{
+  background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--yellow);
+  border-radius:8px; padding:12px 14px; font-size:13.5px; margin-top:10px;
+}
+.callout b{ color:var(--yellow); }
+.callout.tip{ border-left-color:var(--green); }
+.callout.tip b{ color:var(--green); }
+
+.btn-tag{
+  display:inline-block; background:var(--surface-2); border:1px solid var(--border);
+  border-radius:6px; padding:2px 8px; font-family:'JetBrains Mono',monospace;
+  font-size:12.5px; color:var(--yellow);
+}
+
+/* ---- Statuts (échéances) ---- */
+.status-row{ display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+.status-chip{
+  flex:1; min-width:140px; background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:12px; text-align:center;
+}
+.status-dot{ width:10px; height:10px; border-radius:50%; margin:0 auto 6px; }
+.status-chip .lbl{ font-family:'Oswald',sans-serif; font-size:12.5px; text-transform:uppercase; letter-spacing:0.05em; }
+.status-chip .sub{ font-size:11.5px; color:var(--text-muted); margin-top:2px; }
+
+/* ---- Rôles de partage ---- */
+.roles-table{ width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+.roles-table th, .roles-table td{ padding:8px 6px; border-bottom:1px solid var(--border); text-align:left; }
+.roles-table th{ color:var(--text-muted); font-weight:500; font-size:11.5px; text-transform:uppercase; letter-spacing:0.04em; }
+.roles-table td.center, .roles-table th.center{ text-align:center; }
+
+/* ---- FAQ ---- */
+.faq-item{ border-bottom:1px solid var(--border); padding:14px 0; }
+.faq-item:last-child{ border-bottom:none; }
+.faq-q{ font-family:'Oswald',sans-serif; font-size:14.5px; color:var(--yellow); margin-bottom:6px; }
+.faq-a{ font-size:13.5px; color:var(--text); }
+
+/* ---- Section wrapper ---- */
+section.block{ margin-top:52px; }
+section.block h2.section-title{
+  font-size:13px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted);
+  margin-bottom:16px; display:flex; align-items:center; gap:10px;
+}
+section.block h2.section-title::after{ content:''; flex:1; height:1px; background:var(--border); }
+
+/* ---- Footer ---- */
+.footer{ text-align:center; margin-top:60px; color:var(--text-muted); font-size:12.5px; }
+.footer .wrench{ font-size:20px; display:block; margin-bottom:8px; }
+
+@media (max-width:480px){
+  .hero h1{ font-size:25px; }
+  .road{ padding-left:28px; }
+  .stop-num{ left:-28px; width:20px; height:20px; font-size:11px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <div class="hero-mark">🔧</div>
+    <h1>Bienvenue dans ton<br><span class="accent">Carnet de Bord</span></h1>
+    <p class="tagline">Le compagnon de tes véhicules : entretien, échéances, historique — sans rien noter sur un bout de papier qui finira dans la boîte à gants.</p>
+    <span class="readtime">☕️ 5 minutes de lecture, promis</span>
+  </div>
+
+  <div class="road">
+
+    <div class="stop">
+      <div class="stop-num">1</div>
+      <div class="stop-head"><span class="stop-emoji">🚗</span><h2>Ajoute ton premier véhicule</h2></div>
+      <div class="stop-body">
+        <p>Sur l'onglet <b>Aperçu</b>, appuie sur <span class="btn-tag">+ Nouvelle intervention</span> ou sur le bouton d'ajout de véhicule — donne-lui un petit nom (« Clio », « Le camping-car »...), choisis une couleur, et voilà : ta première fiche véhicule existe.</p>
+        <div class="callout tip">
+          <b>💡 Astuce qui fait gagner du temps</b> — au lieu de tout remplir à la main, appuie sur <span class="btn-tag">📷 Pré-remplir depuis la carte grise</span> et prends-la en photo. Marque, modèle, année, carburant et numéro de série se remplissent tout seuls (à vérifier avant de valider, l'OCR n'est pas magicien). Et tout se passe sur ton appareil — la photo n'est jamais envoyée ailleurs.
+        </div>
+      </div>
+    </div>
+
+    <div class="stop">
+      <div class="stop-num">2</div>
+      <div class="stop-head"><span class="stop-emoji">🔧</span><h2>Enregistre ta première intervention</h2></div>
+      <div class="stop-body">
+        <p>Une vidange, un changement de plaquettes, un contrôle technique... Appuie sur <span class="btn-tag">+ Nouvelle intervention</span>, choisis le type, renseigne la date et le kilométrage, et ajoute si tu veux le coût, le garage et une photo de la facture.</p>
+        <ul>
+          <li>Le kilométrage sert à calculer automatiquement tes prochaines échéances.</li>
+          <li>Tu peux joindre une photo ou un PDF de facture — bien pratique pour la garantie ou la revente.</li>
+          <li>Pas de type qui correspond ? Crée le tien en deux clics, il sera disponible pour tous tes véhicules.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stop">
+      <div class="stop-num">3</div>
+      <div class="stop-head"><span class="stop-emoji">📅</span><h2>Comprends tes échéances</h2></div>
+      <div class="stop-body">
+        <p>C'est le cœur de l'app : chaque type d'entretien (vidange, CT, freins...) a un intervalle en kilomètres et/ou en mois. L'app compare avec ta dernière intervention et t'indique où tu en es, avec un code couleur simple :</p>
+        <div class="status-row">
+          <div class="status-chip"><div class="status-dot" style="background:var(--green);"></div><div class="lbl">À jour</div><div class="sub">Large marge</div></div>
+          <div class="status-chip"><div class="status-dot" style="background:var(--yellow);"></div><div class="lbl">À surveiller</div><div class="sub">Bientôt</div></div>
+          <div class="status-chip"><div class="status-dot" style="background:var(--red);"></div><div class="lbl">Dépassée</div><div class="sub">À faire vite</div></div>
+        </div>
+        <p>Un e-mail de rappel t'est envoyé automatiquement quand une échéance approche — pas besoin d'ouvrir l'app tous les jours pour vérifier.</p>
+        <div class="callout">
+          <b>Pas encore sûr des bons intervalles pour ta voiture ?</b> Dans les réglages du véhicule, le bouton <span class="btn-tag">💡 Suggérer des échéances selon mon usage</span> te propose des valeurs de départ raisonnables selon ton carburant et ton kilométrage annuel.
+        </div>
+      </div>
+    </div>
+
+    <div class="stop">
+      <div class="stop-num">4</div>
+      <div class="stop-head"><span class="stop-emoji">👨‍👩‍👧</span><h2>Partage avec ta famille</h2></div>
+      <div class="stop-body">
+        <p>Dans les réglages d'un véhicule, <span class="btn-tag">🔗 Partager</span> permet d'inviter quelqu'un par e-mail, avec le niveau d'accès de ton choix :</p>
+        <table class="roles-table">
+          <tr><th>Rôle</th><th class="center">Voir</th><th class="center">Ajouter</th><th class="center">Tout modifier</th></tr>
+          <tr><td>Lecture seule</td><td class="center">✅</td><td class="center">—</td><td class="center">—</td></tr>
+          <tr><td>Contributeur</td><td class="center">✅</td><td class="center">✅</td><td class="center">—</td></tr>
+          <tr><td>Édition complète</td><td class="center">✅</td><td class="center">✅</td><td class="center">✅</td></tr>
+        </table>
+        <p style="margin-top:12px;">Tu peux aussi fixer une date d'expiration — pratique pour donner un accès temporaire le temps d'un contrôle technique ou d'un passage au garage. Un petit badge 🔓/🔒 sur chaque véhicule te rappelle en un coup d'œil qui y a accès.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="block">
+    <h2 class="section-title">✅ Suivre et vérifier</h2>
+
+    <div class="stop-head"><span class="stop-emoji">✅</span><h2>Les fiches de vérification (checklist)</h2></div>
+    <div class="stop-body">
+      <p>Avant un long trajet, ou juste pour faire un point complet, une fiche de vérification te guide point par point — regroupés par thème : Freinage, Pneumatiques et roues, Niveaux et fluides, Éclairage, et plus encore.</p>
+      <ul>
+        <li>Pour chaque point, un simple choix : <b>OK</b> ou <b>À revoir</b>, avec la possibilité d'ajouter une note.</li>
+        <li>Une anomalie repérée peut être transformée en <b>intervention à prévoir</b> en un clic — elle n'ira pas se perdre dans un coin de ta mémoire.</li>
+        <li>Une fois terminée, la fiche reste dans l'historique du véhicule : une vraie preuve que le contrôle a été fait, et quand.</li>
+      </ul>
+      <div class="callout tip"><b>💡 Personnalisable</b> — la liste des points à vérifier peut être adaptée à tes besoins (ajout, suppression, regroupement par thème), et elle est partagée avec tous ceux qui ont accès à tes véhicules.</div>
+    </div>
+
+    <div class="stop-head" style="margin-top:26px;"><span class="stop-emoji">📋</span><h2>Le journal d'activité</h2></div>
+    <div class="stop-body">
+      <p>Le bouton <span class="btn-tag">📋</span> dans l'en-tête ouvre un historique chronologique de tout ce qui a changé sur tes véhicules — qui a fait quoi, et quand. Particulièrement utile si tu partages tes véhicules : tu sais toujours qui a ajouté une intervention ou modifié un réglage.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="section-title">📤 Partager et exporter</h2>
+
+    <div class="stop-body">
+      <p>Trois façons de sortir tes données de l'app, selon ce dont tu as besoin :</p>
+      <ul>
+        <li><b>Export CSV</b> — depuis l'historique d'un véhicule, télécharge toutes les interventions dans un fichier tableur (Excel, Google Sheets...). Pratique pour tes propres calculs ou archives.</li>
+        <li><b>Fiche d'entretien à imprimer</b> — une feuille listant les prochaines échéances, à emporter au garage ou à donner à quelqu'un qui s'occupe du véhicule pour toi.</li>
+        <li><b>Dossier de vente</b> — la plus complète des trois : une modale te laisse choisir précisément ce qui apparaît (quelles catégories d'interventions, sur quelle période, avec ou sans les notes, les coûts, les photos de factures, l'assurance) avant de générer une page imprimable à remettre à un acheteur potentiel.</li>
+      </ul>
+      <div class="callout"><b>Pourquoi c'est important à la revente</b> — un historique d'entretien complet et vérifiable est un vrai argument de confiance face à un acheteur, bien plus qu'un carnet papier qu'on peut égarer ou qu'on n'a jamais vraiment rempli.</div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="section-title">📊 Regarder d'un peu plus haut</h2>
+
+    <div class="stop-head"><span class="stop-emoji">📊</span><h2>Statistiques et courbe kilométrique</h2></div>
+    <div class="stop-body">
+      <p>Sur l'onglet <b>Aperçu</b>, une section "Statistiques globales" te montre le total dépensé, les dépenses de l'année en cours, et la répartition par véhicule et par catégorie (entretien, pneus, freinage...) — tous véhicules confondus.</p>
+      <p>Sur la fiche de chaque véhicule, une courbe retrace l'évolution du kilométrage au fil du temps — un bon moyen de visualiser ton usage réel, et de repérer d'un coup d'œil une valeur qui semblerait incohérente.</p>
+    </div>
+
+    <div class="stop-head" style="margin-top:26px;"><span class="stop-emoji">🕓</span><h2>Sauvegardes et restauration</h2></div>
+    <div class="stop-body">
+      <p>Chaque modification que tu fais est automatiquement archivée en arrière-plan — pas besoin d'y penser. Si jamais tu fais une erreur ou que tu changes d'avis, le bouton <span class="btn-tag">🕓</span> dans l'en-tête te permet de consulter les versions précédentes de tes données et d'en restaurer une si besoin.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="section-title">❓ Questions rapides</h2>
+
+    <div class="faq-item">
+      <div class="faq-q">Mes données sont-elles en sécurité ?</div>
+      <div class="faq-a">Oui — chacun de tes véhicules n'est visible que par toi et les personnes à qui tu l'as explicitement partagé. Tes documents (factures, carte grise) sont stockés dans un espace privé, jamais accessible publiquement.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Ça fonctionne sans connexion internet ?</div>
+      <div class="faq-a">L'app peut s'ouvrir sans réseau, mais tes véhicules et interventions ont besoin d'une connexion pour se charger et se synchroniser — pense à vérifier avant de partir en zone blanche.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Je peux installer l'app sur mon téléphone ?</div>
+      <div class="faq-a">Oui — depuis ton navigateur mobile, cherche l'option « Ajouter à l'écran d'accueil » (ou équivalent selon ton téléphone). Elle se comportera comme une vraie application.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">J'ai plusieurs véhicules très différents (voiture + remorque) ?</div>
+      <div class="faq-a">Pas de souci : à la création, choisis « Remorque / Caravane » pour désactiver le suivi au kilométrage, qui n'a pas de sens pour ce type de véhicule.</div>
+    </div>
+  </section>
+
+  <div class="footer">
+    <span class="wrench">🔧</span>
+    Carnet de Bord — pensé pour ne plus jamais chercher « c'était quand la dernière vidange déjà ? »
+  </div>
+
+</div>
+</body>
+</html>

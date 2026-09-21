@@ -9,11 +9,12 @@
 // récente est toujours servie quand le réseau est là, le cache ne sert que
 // de filet de sécurité hors-ligne. Incrémenter CACHE_NAME force le
 // remplacement du cache au prochain déploiement.
-var CACHE_NAME = 'carnet-shell-v2';
+var CACHE_NAME = 'carnet-shell-v3';
 
 var PRECACHE_URLS = [
   './',
   './index.html',
+  './guide.html',
   './styles.css',
   './config.js',
   './ui-common.js',
