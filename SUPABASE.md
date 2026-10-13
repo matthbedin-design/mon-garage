@@ -376,6 +376,76 @@ reproduise pas à la prochaine modification de ce job.
   **Supabase Vault** (`vault.create_secret`) pour que `cron.job` ne
   contienne plus qu'une référence, jamais la valeur brute.
 
+## Ma Maison — application sœur (vérifié en direct le 13/10/2026)
+
+Même projet Supabase que mon-garage. Tables préfixées `home_*` (+ `properties`),
+aucune donnée garage n'est partagée ni touchée. Le code est dans le dépôt
+`ma-maison` (voir son README).
+
+### Tables
+`properties` (le bien : `owner_id`, `name`, `address`, `property_type`, `color`,
+`enabled_types`, `intervals`, `documents`, `sort_order`), `home_entries`
+(`property_id`, `type_id`, `date`, `cost`, `notes`, `provider`, `invoice_doc`,
+`batch_id`, `session_id`, `created_by`...), `home_sessions`,
+`home_planned_interventions`, `home_shares` (`property_id`, `owner_id`,
+`shared_with_user_id`, `invited_email`, `role`, `status`, `expires_at`),
+`home_data` (miroir JSON, sauvegardes) + `home_data_history`, `home_settings`
+(journal par utilisateur, distinct de `user_settings`).
+`shared_settings` (ligne `id='default'`) porte aussi `home_types` et
+`home_checklist_items`, à côté des colonnes `types`/`checklist_items` de mon-garage.
+Le script `correctifs-schema.sql` du dépôt ajoute les colonnes que le code
+utilise (`properties.documents`, `home_entries.session_id`...), il est idempotent.
+
+### Policies RLS
+Toutes les tables ont RLS activé. Même logique que mon-garage :
+- `properties` : SELECT propriétaire ou `has_property_access(id)` ; INSERT
+  `owner_id = auth.uid()` ; UPDATE `can_edit_property(id)` ; DELETE propriétaire.
+- `home_entries`, `home_sessions`, `home_planned_interventions` : SELECT
+  `has_property_access`, INSERT `has_property_contribute_access`, UPDATE/DELETE
+  `can_edit_property`.
+- `home_shares` : SELECT propriétaire ou invité, + `..._select_pending` et
+  `..._self_claim` (invitation en attente, e-mail du JWT) ; INSERT/UPDATE/DELETE
+  propriétaire.
+- `home_data`, `home_settings` : propriétaire seulement (`auth.uid() = user_id`) ;
+  `home_data_history` : SELECT seulement.
+- `shared_settings` : tout utilisateur authentifié peut lire/écrire (choix assumé,
+  partagé entre comptes) → **voir Auth : inscriptions publiques désactivées**.
+
+### Fonctions `SECURITY DEFINER` (`search_path` fixé, expiration `expires_at` prise en compte)
+`has_property_access`, `has_property_contribute_access` (owner/editor/contributor),
+`can_edit_property` (owner/editor), `archive_home_data`,
+`prevent_home_share_tampering`, `prevent_owner_change`.
+
+### Triggers
+- `trg_archive_home_data` (BEFORE UPDATE sur `home_data`) → archive dans `home_data_history`.
+- `trg_prevent_home_share_tampering` (BEFORE UPDATE sur `home_shares`) : interdit de
+  modifier rôle, bien, propriétaire, e-mail invité, expiration.
+- `trg_prevent_property_owner_change` (sur `properties`) et
+  `trg_prevent_vehicle_owner_change` (sur `vehicles`) : interdit de changer
+  `owner_id` — sans eux, un éditeur invité pouvait se déclarer propriétaire.
+
+### Storage
+Bucket privé `home-documents` (JPEG/PDF, 15 Mo). Chemins `userId/propertyId/...`.
+Policies : `home_docs_insert/select/delete` limitées au dossier de l'utilisateur
+(`foldername[1] = auth.uid()`), + `home_docs_select_shared` : lecture des fichiers
+d'un bien pour toute personne ayant `has_property_access` (`foldername[2]` = id du bien),
+afin que propriétaire et invités voient les factures les uns des autres. La
+suppression reste réservée à l'auteur du fichier.
+
+### Realtime
+Publiées : `properties`, `home_entries`, `home_sessions`,
+`home_planned_interventions`, `home_shares`, `shared_settings`.
+
+### Cron
+`cleanup_home_data_history` (tous les jours à 4 h, purge > 90 jours), actif.
+Pas de rappels par e-mail pour ma-maison à ce jour (`daily-maintenance-reminders`
+ne couvre que les véhicules).
+
+### Auth
+Inscriptions publiques désactivées (13/10/2026) : pour donner accès à une nouvelle
+personne, créer d'abord son compte (Authentication > Users > Add/Invite user), puis
+partager le bien depuis l'appli. Ajouter l'URL de l'appli dans Redirect URLs.
+
 ## Points encore à vérifier (non faits dans cette session)
 
 - **Contenu réel des Edge Functions** `send-reminders`, `send-history`,
@@ -385,3 +455,7 @@ reproduise pas à la prochaine modification de ce job.
   vigilance ci-dessus) plutôt que de le laisser en clair dans `cron.job`.
 - Types de colonnes exacts et contraintes (`NOT NULL`, valeurs par défaut)
   des tables — seuls les noms de colonnes sont documentés ici.
+- Ma Maison : écart connu avec mon-garage — la policy de lecture Storage
+  `vehicle-documents` n'a pas (encore) d'équivalent `..._select_shared` ; un
+  invité ne peut donc pas ouvrir les factures du propriétaire côté garage.
+- Ma Maison : rappels par e-mail et envoi de l'historique par e-mail non faits.
