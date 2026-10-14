@@ -369,6 +369,7 @@ async function saveEntry(){
   var now = new Date().toISOString();
   var ctData = (typeIds.indexOf('ct') > -1) ? collectCtData() : null;
   var list = state.entries[activeVehicleId] || [];
+  state.entries[activeVehicleId] = list; // garantit que la liste modifiée est bien celle de `state`
 
   // Upload de la facture (différé jusqu'ici pour connaître l'id de l'intervention/du lot)
   var saveBtn = document.getElementById('saveBtn');

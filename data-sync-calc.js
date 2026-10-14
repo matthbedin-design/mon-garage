@@ -613,6 +613,15 @@ function normalizeState(){
   if(!state.sessions) state.sessions = {};
   if(!state.plannedInterventions) state.plannedInterventions = {};
 
+  // Chaque vehicle doit avoir ses tableaux, même vides : sans cela, la première
+  // intervention ajoutée à un vehicle sans historique était poussée dans un tableau
+  // temporaire jamais rattaché à `state` (donc ni affichée, ni synchronisée).
+  Object.keys(state.vehicles).forEach(function(id){
+    if(!state.entries[id]) state.entries[id] = [];
+    if(!state.sessions[id]) state.sessions[id] = [];
+    if(!state.plannedInterventions[id]) state.plannedInterventions[id] = [];
+  });
+
   if(!activeVehicleId){
     activeVehicleId = DASHBOARD_ID;
   }
