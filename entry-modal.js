@@ -506,3 +506,89 @@ function closeModal(){
   convertingPlannedIntervention = null;
 }
 
+// ---- Fiche « dernière intervention » d'un type, ouverte depuis les échéances ----
+function openLastInterventionModal(vehicleId, typeId){
+  var v = state.vehicles[vehicleId];
+  if(!v) return;
+  var cfg = getTypeConfig(v, typeId);
+  var label = cfg ? cfg.label : typeId;
+  var last = getLatestEntry(vehicleId, typeId);
+  var iCanContribute = canContribute(vehicleId);
+  var iCanEdit = canEditVehicle(vehicleId);
+  var modal = document.getElementById('modal');
+
+  var body = '';
+  if(!last){
+    body = '<div class="empty-state" style="margin-bottom:14px;">Aucune intervention de ce type enregistrée pour ce véhicule.</div>';
+  } else {
+    var rows = [];
+    rows.push(['Date', fmtDate(last.date)]);
+    if(!isTrailer(v) && last.km != null){
+      var since = (v.mileage || 0) - last.km;
+      rows.push(['Kilométrage', fmtKm(last.km) + (since > 0 ? ' <span class="field-hint" style="display:inline;">(' + since.toLocaleString('fr-FR') + ' km depuis)</span>' : '')]);
+    }
+    if(last.cost != null) rows.push(['Coût', fmtEuro(last.cost) + (last.batchId ? ' <span class="field-hint" style="display:inline;">(facture partagée)</span>' : '')]);
+    if(last.garage) rows.push(['Garage', escapeHtml(last.garage)]);
+    if(last.supplier) rows.push(['Fournisseur', escapeHtml(last.supplier)]);
+    if(last.notes) rows.push(['Notes', escapeHtml(last.notes)]);
+    if(last.ct){
+      var ctLabels = { ok: '✅ Favorable', remarks: '✅ Favorable avec remarques', ko_major: '🟠 Défavorable (majeure)', ko_critical: '🔴 Défavorable (critique)' };
+      rows.push(['Résultat CT', ctLabels[last.ct.result] || '—']);
+    }
+    if(last.invoiceDoc) rows.push(['Facture', '📎 ' + escapeHtml(last.invoiceDoc.name) + ' <button type="button" class="link-btn" id="lastViewInvoiceBtn">Voir</button>']);
+
+    body = '<div class="last-int-grid">' + rows.map(function(r){
+      return '<span class="k">' + r[0] + '</span><span>' + r[1] + '</span>';
+    }).join('') + '</div>';
+    if(iCanContribute){
+      body += '<div class="field-hint" style="margin-bottom:12px;">La nouvelle intervention reprendra le coût, le garage, le fournisseur et les notes de celle-ci — tout reste modifiable avant d\'enregistrer. La date et le kilométrage sont ceux d\'aujourd\'hui.</div>';
+    }
+  }
+
+  modal.innerHTML =
+    '<h3>' + escapeHtml(label) + ' <button class="icon-btn" id="closeModalBtn" aria-label="Fermer">\u2715</button></h3>' +
+    (last ? '<div class="field-hint" style="margin-bottom:10px;">Dernière intervention</div>' : '') +
+    body +
+    '<div class="modal-actions" style="flex-wrap:wrap;">' +
+      '<button class="btn btn-ghost" id="cancelBtn">Fermer</button>' +
+      (last && iCanEdit ? '<button class="btn btn-ghost" id="lastEditBtn">Modifier</button>' : '') +
+      (iCanContribute ? '<button class="btn btn-primary" id="lastNewBtn">' + (last ? 'Nouvelle intervention' : 'Créer une intervention') + '</button>' : '') +
+    '</div>';
+
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('closeModalBtn').onclick = closeModal;
+  document.getElementById('cancelBtn').onclick = closeModal;
+
+  var viewInv = document.getElementById('lastViewInvoiceBtn');
+  if(viewInv) viewInv.onclick = function(){ openStorageDoc(last.invoiceDoc.path); };
+
+  var editBtn = document.getElementById('lastEditBtn');
+  if(editBtn) editBtn.onclick = function(){ closeModal(); openEntryModal(last.id); };
+
+  var newBtn = document.getElementById('lastNewBtn');
+  if(newBtn) newBtn.onclick = function(){ startNewEntryFromLast(vehicleId, typeId, last); };
+}
+
+// Ouvre le formulaire d'intervention avec le type coché et les éléments de la
+// dernière intervention de ce type repris (modifiables). Date et kilométrage
+// restent ceux par défaut (aujourd'hui / kilométrage actuel), la facture n'est
+// pas reprise, et le coût n'est repris que s'il ne s'agit pas d'une facture
+// partagée entre plusieurs lignes (le total du lot ne vaudrait pas pour une seule).
+function startNewEntryFromLast(vehicleId, typeId, last){
+  closeModal();
+  activeVehicleId = vehicleId;
+  openEntryModal(null);
+
+  var cb = document.querySelector('.f-type-multi[value="' + typeId + '"]');
+  if(cb){
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change')); // affiche la section CT si besoin
+  }
+  if(!last) return;
+
+  if(last.cost != null && !last.batchId) document.getElementById('f-cost').value = last.cost;
+  document.getElementById('f-garage').value = last.garage || '';
+  document.getElementById('f-supplier').value = last.supplier || '';
+  document.getElementById('f-notes').value = last.notes || '';
+}
+

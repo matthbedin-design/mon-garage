@@ -379,7 +379,7 @@ function renderContent(){
         }
       }
 
-      html += '<div class="gauge-card">';
+      html += '<div class="gauge-card gauge-card-clickable" data-type-id="' + escapeHtml(st.cfg.id) + '" role="button" tabindex="0" title="Voir la dernière intervention">';
       html += '<div class="gauge-top">';
       html += '<span class="gauge-label">' + escapeHtml(st.cfg.label) + '</span>';
       html += '<span class="gauge-status" style="color:' + barColor + ';">' + escapeHtml(statusText) + '</span>';
@@ -631,6 +631,15 @@ function renderContent(){
     gaugesSectionCollapsed[activeVehicleId] = !gaugesSectionCollapsed[activeVehicleId];
     renderContent();
   };
+
+  // Clic (ou Entrée/Espace) sur une échéance : fiche de la dernière intervention de ce type
+  Array.prototype.forEach.call(content.querySelectorAll('.gauge-card-clickable'), function(card){
+    var open = function(){ openLastInterventionModal(activeVehicleId, card.getAttribute('data-type-id')); };
+    card.onclick = open;
+    card.onkeydown = function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    };
+  });
 
   var costsToggle = document.getElementById('costsToggle');
   if(costsToggle) costsToggle.onclick = function(){

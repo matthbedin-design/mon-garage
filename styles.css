@@ -81,6 +81,10 @@
   section{ margin-bottom:26px; }
 
   .gauge-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
+  .gauge-card-clickable{ cursor:pointer; transition:border-color .15s ease; }
+  .gauge-card-clickable:hover, .gauge-card-clickable:focus-visible{ border-color:var(--accent, var(--yellow)); outline:none; }
+  .last-int-grid{ display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:13.5px; margin-bottom:14px; }
+  .last-int-grid .k{ color:var(--text-muted); }
   .gauge-ref{ font-size:11px; color:var(--text-muted); margin-top:3px; }
   .collapsible-title{ cursor:pointer; user-select:none; }
   .collapsible-title-inline{ cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px; }
